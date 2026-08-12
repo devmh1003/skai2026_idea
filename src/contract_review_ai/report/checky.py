@@ -40,9 +40,12 @@ CSS = """
 border-radius:21%}
 .ck-fold{left:71.4%;top:8.5%;width:18.5%;height:18.5%;background:#FFE3DA;
 border-left:4px solid var(--ink);border-bottom:4px solid var(--ink);border-radius:0 100% 0 30%}
-.ck-eyes{left:0;top:40%;width:100%;display:flex;justify-content:center;gap:18.5%}
-.ck-eyes i{display:block;width:11%;height:13%;border-radius:50%;background:var(--ink);
-animation:ck-blink 4.6s infinite}
+.ck-eyes{left:0;top:38%;width:100%;height:calc(var(--size,140px)*.14);display:flex;
+align-items:center;justify-content:center;gap:18.5%}
+/* 눈 크기는 캐릭터 크기 기준으로 잡는다. 부모 높이 기준 퍼센트는 부모가 auto라
+   0으로 풀려 눈이 사라진다. */
+.ck-eyes i{display:block;width:calc(var(--size,140px)*.12);height:calc(var(--size,140px)*.14);
+border-radius:50%;background:var(--ink);animation:ck-blink 4.6s infinite}
 .ck-mouth{left:45.7%;top:60%;width:14.3%;height:7%;border:4px solid var(--ink);border-top:none;
 border-radius:0 0 50% 50%}
 .ck-cheek{top:57%;width:12.8%;height:6.4%;border-radius:50%;background:#FFB3A7}
@@ -63,25 +66,45 @@ border-radius:50%;animation:ck-spark 1.6s ease-in-out infinite}
 .ck-face.scanning .ck-body{overflow:hidden}
 .ck-face.scanning .ck-body::after{content:'';position:absolute;left:0;width:100%;height:16%;
 background:linear-gradient(var(--orange),rgba(244,119,37,0));animation:ck-sweep 1.6s linear infinite}
-.ck-face.scanning .ck-eyes i{height:3.5%;border-radius:3px;animation:none}
+.ck-face.scanning .ck-eyes i{height:calc(var(--size,140px)*.045);border-radius:3px;
+animation:none}
 .ck-face.scanning .ck-mouth{width:13%;height:13%;border:4px solid var(--ink);border-radius:50%;
 top:58.5%;left:46.4%}
 .ck-face.scanning .ck-cheek{display:none}
-.ck-face.alert .ck-eyes i{width:13.5%;height:16.4%}
+.ck-face.alert .ck-eyes i{width:calc(var(--size,140px)*.15);
+height:calc(var(--size,140px)*.18)}
 .ck-face.alert .ck-mouth{width:18.5%;height:13.5%;background:var(--ink);border:none;
 border-radius:50%;left:41.4%;top:62.8%}
 .ck-face.alert .ck-cheek{display:none}
-.ck-face.ok .ck-eyes i{width:15.7%;height:8.5%;background:none;border:4px solid var(--ink);
-border-bottom:none;border-radius:50% 50% 0 0}
+.ck-face.ok .ck-eyes i{width:calc(var(--size,140px)*.17);height:calc(var(--size,140px)*.09);
+background:none;border:3px solid var(--ink);border-bottom:none;border-radius:50% 50% 0 0}
 .ck-face.ok .ck-mouth{width:15.7%;height:9.2%;background:var(--ink);border:none;
 border-radius:0 0 50% 50%;left:42%;top:60%}
 
-/* ── 돌아다니는 동반자 ────────────────────────────── */
-.ck-buddy{position:fixed;bottom:20px;left:0;z-index:40;display:flex;align-items:flex-end;gap:10px;
-transition:transform 2.4s cubic-bezier(.4,0,.2,1);pointer-events:none}
+/* 작게 그리면 4px 테두리가 두꺼워 눈이 묻힌다. 작은 크기에서는 선을 얇게,
+   눈·볼을 크게 잡아 표정이 남게 한다. */
+.ck-face.sm .ck-body,.ck-face.sm .ck-mouth{border-width:3px}
+.ck-face.sm .ck-fold{border-left-width:3px;border-bottom-width:3px}
+.ck-face.sm .ck-eyes{gap:24%;height:calc(var(--size,140px)*.19)}
+.ck-face.sm .ck-eyes i{width:calc(var(--size,140px)*.16);height:calc(var(--size,140px)*.19)}
+.ck-face.sm .ck-mouth{top:62%;left:44%;width:16%;height:8%}
+.ck-face.sm .ck-cheek{width:14%;height:7%;top:59%}
+.ck-face.sm .ck-cheek.l{left:20%}.ck-face.sm .ck-cheek.r{left:66%}
+.ck-face.sm.ok .ck-eyes i{width:calc(var(--size,140px)*.2);
+height:calc(var(--size,140px)*.11);border-width:3px}
+.ck-face.sm.alert .ck-eyes i{width:calc(var(--size,140px)*.19);
+height:calc(var(--size,140px)*.22)}
+.ck-face.sm.scanning .ck-eyes i{height:calc(var(--size,140px)*.055)}
+
+/* ── 왼편을 오가는 동반자 ─────────────────────────── */
+/* 본문은 오른쪽에 있으므로 화면 왼쪽 띠 안에서만 움직인다. */
+.ck-buddy{position:fixed;left:14px;bottom:22px;z-index:40;display:flex;
+flex-direction:column;align-items:flex-start;gap:8px;width:200px;
+transition:transform 2.6s cubic-bezier(.4,0,.2,1);pointer-events:none}
 .ck-buddy>*{pointer-events:auto}
-.ck-buddy .ck-face{cursor:pointer;filter:drop-shadow(0 6px 14px rgba(23,25,28,.18))}
-.ck-bubble{max-width:300px;background:#fff;border:1px solid var(--line);border-radius:14px 14px 14px 4px;
+.ck-buddy .ck-face{cursor:pointer;filter:drop-shadow(0 8px 18px rgba(23,25,28,.28))}
+.ck-bubble{max-width:200px;order:-1;background:#fff;border:1px solid var(--line);
+border-radius:14px 14px 14px 4px;
 box-shadow:0 10px 28px rgba(23,25,28,.12);padding:11px 15px;font-size:13px;line-height:1.6;
 color:var(--ink);animation:ck-pop .28s cubic-bezier(.22,1,.36,1) both}
 .ck-bubble b{font-weight:700}
@@ -104,7 +127,7 @@ JS = r"""
   var holdUntil = 0;
 
   function setState(state){
-    face.className = 'ck-face ' + state;
+    face.className = 'ck-face sm ' + state;
   }
 
   // 상황별로 표정과 말이 함께 바뀐다. hold를 주면 그동안 산책 멘트가 끼어들지 않는다.
@@ -125,14 +148,15 @@ JS = r"""
     bubble.hidden = !bubble.hidden;
   });
 
-  // 화면 아래를 천천히 오간다. 사람 손이 가는 오른쪽 아래를 계속 막지 않도록
-  // 위치를 조금씩 바꾼다.
-  var spots = [0.06, 0.3, 0.55, 0.74];
+  // 본문을 가리지 않도록 화면 왼쪽 띠 안에서만 오간다.
+  var spots = [[0, 0], [26, -70], [6, -140], [30, -60]];
   var index = 0;
   function stroll(){
-    var width = Math.max(window.innerWidth - buddy.offsetWidth - 24, 0);
     index = (index + 1) % spots.length;
-    buddy.style.transform = 'translateX(' + Math.round(width * spots[index]) + 'px)';
+    var limit = Math.max(window.innerHeight - 220, 0);
+    var move = spots[index];
+    var y = Math.max(move[1], -limit);
+    buddy.style.transform = 'translate(' + move[0] + 'px,' + y + 'px)';
   }
   stroll();
   setInterval(stroll, 9000);
@@ -168,7 +192,7 @@ def buddy_markup() -> str:
     """화면을 돌아다니는 체키."""
     return (
         '<div class="ck ck-buddy">'
-        f'<div class="ck-face idle" style="--size:64px">{FACE_MARKUP}</div>'
+        f'<div class="ck-face sm idle" style="--size:78px">{FACE_MARKUP}</div>'
         '<div class="ck-bubble"><button class="ck-close" title="닫기">×</button>'
         '<span class="ck-text">계약서를 올려주시면 조항을 훑어볼게요.</span></div>'
         "</div>"
