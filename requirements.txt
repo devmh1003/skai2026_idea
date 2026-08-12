@@ -1,0 +1,16 @@
+# 코어 파이프라인(hwpx 파싱·당사자 인식·정렬·diff·룰·리포트)은
+# 표준 라이브러리만으로 동작합니다. 아래는 선택 의존성입니다.
+
+# --- 문서 포맷 ---
+python-docx>=1.1   # .docx
+pypdf>=4.2         # .pdf
+olefile>=0.47      # 구형 .hwp (best-effort)
+
+# --- 로컬 A.X 추론 백엔드 (GPU 16GB+ 권장) ---
+# torch>=2.2
+# transformers>=4.43
+# accelerate>=0.30
+
+# --- 개발 ---
+# pytest>=8.0
+# ruff>=0.5

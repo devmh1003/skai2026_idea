@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "contract-review-ai"
+version = "0.1.0"
+description = "A.X(SKT) 모델 기반 계약서 비교·법무 코멘트 생성기"
+requires-python = ">=3.11"
+readme = "README.md"
+dependencies = []
+
+[project.optional-dependencies]
+local = ["torch>=2.2", "transformers>=4.43", "accelerate>=0.30"]
+docs = ["python-docx>=1.1", "pypdf>=4.2", "olefile>=0.47"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[project.scripts]
+contract-review = "contract_review_ai.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+# 한국어 법무 문구가 그대로 들어가는 상수가 많아 110자로 둔다.
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src/contract_review_ai"]
