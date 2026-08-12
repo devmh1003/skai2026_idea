@@ -148,13 +148,58 @@ python scripts/run_demo.py
 
 3자 계약(갑·을·병) 샘플로 v1·v2를 등록하고 `out/dashboard.html`을 만듭니다. 네트워크를 쓰지 않습니다.
 
+### 쟁점 룰 커스터마이즈
+
+내장 룰 23종은 어느 계약에나 걸리는 공통 쟁점만 담았습니다. 업종·회사마다 반드시 봐야 하는
+항목은 파일로 얹고, 필요 없는 룰은 끌 수 있습니다.
+
+```bash
+contract-review rules list                     # 적용 중인 룰 확인
+contract-review rules export my_rules.json     # 편집 시작점 내보내기
+contract-review review a.hwpx b.hwpx \
+  --rules my_rules.json --disable-rule MFN --disable-rule NUMERIC-CHANGE
+```
+
+룰 파일은 JSON 또는 TOML이며, 같은 `code`를 쓰면 내장 룰을 덮어씁니다(문구를 사내 표현으로
+바꾸거나 위험도만 조정할 때). 예시는 [`data/rules/custom_rules.example.json`](data/rules/custom_rules.example.json)
+— 하도급대금 직접지급, 개인정보 국외이전, ESG 공급망 실사, AI 학습 데이터 이용 4종이 들어 있습니다.
+
+```json
+{
+  "rules": [
+    {
+      "code": "PRIVACY-CROSSBORDER",
+      "category": "개인정보",
+      "level": "high",
+      "mode": "introduced",
+      "pattern": "국외\\s*(이전|제공|저장)|해외\\s*서버",
+      "message": "개인정보 국외 이전 문언이 추가되었습니다. …"
+    }
+  ],
+  "disable": ["MFN"]
+}
+```
+
+`mode`는 `introduced`(개정본에서 새로 등장) · `removed`(원본에 있었는데 사라짐) ·
+`changed`(문언이 바뀌었고 어느 쪽이든 걸림) 중 하나입니다.
+
+### 포털 — 여러 계약을 한 페이지로
+
+```bash
+contract-review portal --party all -o out
+```
+
+등록된 모든 계약의 모든 버전 조합을 검토해 `out/portal.html` 하나로 묶습니다.
+**계약 선택 → 비교본 선택 → 검토 결과** 순으로 화면이 나뉘어, 파일을 찾아 열지 않고
+한 페이지에서 고를 수 있습니다. `--pairs adjacent|all|latest`로 비교 조합을 조절합니다.
+
 ## 검토 의견서 (HTML)
 
 외부 CDN·폰트·스크립트 의존이 전혀 없는 단일 HTML입니다(폐쇄망 반입 가능). 차트는 파이썬이 SVG로 직접 그립니다.
-대형 로펌 의견서 톤 — 감청색 표제부에 금박 괘선, 명조 계열 제목, 미색 종이 바탕 — 으로 디자인했고
-인쇄용 스타일(`@media print`)이 있어 탭 없이 전체가 한 문서로 출력됩니다.
+엔터프라이즈 도구 톤 — 중립 무채색 표면에 액센트 하나, 얇은 보더, 낮은 라운드, 표 형태 수치 —
+으로 정리했고, 인쇄용 스타일(`@media print`)이 있어 탭 없이 전체가 한 문서로 출력됩니다.
 
-지표 요약(변경·수정·신설·삭제·고위험·중위험 + 위험도 도넛)은 탭 위에 고정되어 어느 탭에서도 보입니다.
+지표 요약(변경·수정·신설·삭제·고위험·중위험 + 위험도 막대)은 탭 위 한 줄로 고정됩니다.
 
 | 탭 | 내용 |
 |---|---|

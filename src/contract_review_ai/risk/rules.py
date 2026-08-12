@@ -254,16 +254,27 @@ _NUMBER_RE = re.compile(
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.。])\s*|\n")
 
 
-def analyze_comparison(comp: ClauseComparison) -> list[RiskFlag]:
-    """비교 결과 하나에 대해 위험 플래그 목록을 만든다."""
+def analyze_comparison(
+    comp: ClauseComparison,
+    rules: tuple[Rule, ...] | None = None,
+    disabled: set[str] | None = None,
+) -> list[RiskFlag]:
+    """비교 결과 하나에 대해 위험 플래그 목록을 만든다.
+
+    rules를 주지 않으면 내장 룰 전체를 쓴다. disabled에는 룰 코드뿐 아니라
+    NUMERIC-CHANGE·CLAUSE-DELETED 같은 합성 플래그 코드도 넣을 수 있다.
+    """
     if comp.status is ChangeStatus.UNCHANGED:
         return []
+
+    rules = RULES if rules is None else rules
+    disabled = disabled or set()
 
     before = comp.before.full_text if comp.before else ""
     after = comp.after.full_text if comp.after else ""
 
     flags: list[RiskFlag] = []
-    for rule in RULES:
+    for rule in rules:
         flag = _apply_rule(rule, before, after, comp.status)
         if flag:
             flags.append(flag)
@@ -296,6 +307,7 @@ def analyze_comparison(comp: ClauseComparison) -> list[RiskFlag]:
             )
         )
 
+    flags = [flag for flag in flags if flag.code not in disabled]
     flags.sort(key=lambda f: (-f.level.rank, f.code))
     return flags
 

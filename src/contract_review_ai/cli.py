@@ -17,8 +17,9 @@ from pathlib import Path
 from .config import BACKENDS, DEFAULT_MODEL, Settings
 from .console import force_utf8
 from .models import RiskLevel
-from .report import render_html, render_markdown
+from .report import PortalContract, render_html, render_markdown, render_portal
 from .review import review_contracts, review_versions
+from .risk import RuleFileError, build_ruleset, export_rules
 from .versioning import VersionStore, build_timeline
 
 _LEVELS = {
@@ -27,7 +28,7 @@ _LEVELS = {
     "low": RiskLevel.LOW,
     "info": RiskLevel.INFO,
 }
-_SUBCOMMANDS = {"review", "version", "history"}
+_SUBCOMMANDS = {"review", "version", "history", "rules", "portal"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -69,6 +70,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="자동 인식된 당사자 제외. 반복 지정 가능 (예: --remove-party 병)",
     )
     review.add_argument(
+        "--rules",
+        action="append",
+        default=[],
+        metavar="파일",
+        help="사용자 룰 파일(.json/.toml)을 내장 룰에 얹습니다. 반복 지정 가능",
+    )
+    review.add_argument(
+        "--disable-rule",
+        action="append",
+        default=[],
+        metavar="코드",
+        help="특정 룰 해제 (예: --disable-rule MFN --disable-rule NUMERIC-CHANGE)",
+    )
+    review.add_argument(
         "--min-level",
         choices=list(_LEVELS),
         default="info",
@@ -94,6 +109,36 @@ def build_parser() -> argparse.ArgumentParser:
     history = sub.add_parser("history", help="버전 체인 전체의 변경 이력 요약")
     history.add_argument("contract_id")
 
+    portal = sub.add_parser("portal", help="등록된 모든 계약을 한 페이지로 묶기")
+    portal.add_argument("contract_id", nargs="*", help="대상 계약 ID (생략 시 전체)")
+    portal.add_argument("-o", "--out", default="out", help="출력 폴더")
+    portal.add_argument("--backend", choices=BACKENDS, default=None)
+    portal.add_argument("--model", default=None)
+    portal.add_argument("--party", default="", help="코멘트 관점 (약칭 콤마 구분 또는 all)")
+    portal.add_argument(
+        "--min-level", choices=list(_LEVELS), default="medium",
+        help="LLM 코멘트를 생성할 최소 위험도 (기본: medium — 포털은 건수가 많아 기본값이 높습니다)",
+    )
+    portal.add_argument(
+        "--pairs", choices=("adjacent", "all", "latest"), default="adjacent",
+        help="비교 조합. adjacent=연속 버전(+최초→최신), all=모든 조합, latest=최초→최신만",
+    )
+    portal.add_argument("--rules", action="append", default=[])
+    portal.add_argument("--disable-rule", action="append", default=[])
+    portal.add_argument("-q", "--quiet", action="store_true")
+
+    rules = sub.add_parser("rules", help="쟁점 룰 조회·내보내기")
+    rules_sub = rules.add_subparsers(dest="rules_command", required=True)
+
+    rules_list = rules_sub.add_parser("list", help="적용 중인 룰 목록")
+    rules_list.add_argument("--rules", action="append", default=[], help="사용자 룰 파일")
+    rules_list.add_argument("--disable-rule", action="append", default=[], help="해제할 룰 코드")
+
+    rules_export = rules_sub.add_parser("export", help="현재 룰셋을 파일로 내보내기")
+    rules_export.add_argument("file", help="저장할 경로 (.json)")
+    rules_export.add_argument("--rules", action="append", default=[], help="사용자 룰 파일")
+    rules_export.add_argument("--disable-rule", action="append", default=[], help="해제할 룰 코드")
+
     return parser
 
 
@@ -111,6 +156,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_version(args, store)
     if args.command == "history":
         return _cmd_history(args, store)
+    if args.command == "rules":
+        return _cmd_rules(args)
+    if args.command == "portal":
+        return _cmd_portal(args, store)
     if args.command == "review":
         return _cmd_review(args, store)
 
@@ -145,6 +194,8 @@ def _cmd_review(args, store: VersionStore) -> int:
         "progress": progress,
         "add_parties": args.add_party,
         "remove_parties": args.remove_party,
+        "rule_files": args.rules,
+        "disable_rules": args.disable_rule,
     }
 
     try:
@@ -259,6 +310,118 @@ def _cmd_history(args, store: VersionStore) -> int:
         )
         if step.headings:
             print(f"      주요 변경: {', '.join(step.headings)}")
+    return 0
+
+
+# ---------------------------------------------------------------- portal
+
+
+def _version_pairs(versions: list[str], mode: str) -> list[tuple[str, str]]:
+    """비교할 (이전, 이후) 버전 조합."""
+    if len(versions) < 2:
+        return []
+    if mode == "latest":
+        return [(versions[0], versions[-1])]
+    if mode == "all":
+        return [(a, b) for i, a in enumerate(versions) for b in versions[i + 1 :]]
+
+    pairs = list(zip(versions, versions[1:], strict=False))
+    if len(versions) > 2:
+        pairs.append((versions[0], versions[-1]))  # 누적 변화도 한 번에 보게
+    return pairs
+
+
+def _cmd_portal(args, store: VersionStore) -> int:
+    settings = Settings.from_env()
+    if args.backend:
+        settings.backend = args.backend
+    if args.model:
+        settings.model = args.model
+
+    targets = args.contract_id or store.contracts()
+    if not targets:
+        print("등록된 계약이 없습니다. version add 로 먼저 등록하십시오.", file=sys.stderr)
+        return 1
+
+    views = [v.strip() for v in args.party.split(",") if v.strip()]
+    say = (lambda _: None) if args.quiet else (lambda m: print(m, file=sys.stderr))
+    contracts: list[PortalContract] = []
+
+    for contract_id in targets:
+        records = store.versions(contract_id)
+        pairs = _version_pairs([r.version for r in records], args.pairs)
+        if not pairs:
+            say(f"{contract_id}: 버전이 2개 미만이라 건너뜁니다.")
+            continue
+
+        entry = PortalContract(
+            contract_id=contract_id, title=store.load(contract_id).get("title", contract_id)
+        )
+        for before, after in pairs:
+            say(f"[{contract_id}] {before} → {after} 검토 중…")
+            try:
+                entry.results.append(
+                    review_versions(
+                        contract_id,
+                        before,
+                        after,
+                        store=store,
+                        settings=settings,
+                        views=views,
+                        min_level=_LEVELS[args.min_level],
+                        rule_files=args.rules,
+                        disable_rules=args.disable_rule,
+                        progress=None,
+                    )
+                )
+            except (FileNotFoundError, ValueError, RuntimeError) as exc:
+                say(f"  건너뜀: {exc}")
+        if entry.results:
+            contracts.append(entry)
+
+    if not contracts:
+        print("[오류] 비교 가능한 계약이 없습니다.", file=sys.stderr)
+        return 1
+
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "portal.html"
+    path.write_text(render_portal(contracts), encoding="utf-8")
+
+    total = sum(len(c.results) for c in contracts)
+    high = sum(c.high for c in contracts)
+    print(f"계약 {len(contracts)}건 · 비교본 {total}개 · 고위험 {high}건")
+    print(f"  → {path}")
+    return 0
+
+
+# ---------------------------------------------------------------- rules
+
+
+def _cmd_rules(args) -> int:
+    try:
+        rules, disabled = build_ruleset(args.rules, args.disable_rule)
+    except RuleFileError as exc:
+        print(f"[오류] {exc}", file=sys.stderr)
+        return 1
+
+    if args.rules_command == "export":
+        path = export_rules(rules, args.file)
+        print(f"룰 {len(rules)}종을 {path}에 저장했습니다.")
+        print("파일을 편집한 뒤 --rules 옵션으로 지정하십시오.")
+        return 0
+
+    print(f"적용 중인 룰 {len(rules)}종" + (f" (해제 {len(disabled)}종)" if disabled else ""))
+    by_category: dict[str, list] = {}
+    for rule in rules:
+        by_category.setdefault(rule.category, []).append(rule)
+
+    for category in sorted(by_category):
+        print(f"\n[{category}]")
+        for rule in by_category[category]:
+            print(f"  {rule.level.label:<3} {rule.code:<22} {rule.message[:56]}")
+    if disabled:
+        print(f"\n해제됨: {', '.join(sorted(disabled))}")
     return 0
 
 

@@ -349,5 +349,27 @@ def test_review_end_to_end_offline(tmp_path):
 
     page = render_html(result)
     assert "<!DOCTYPE html>" in page
-    assert "조문 × 당사자 영향 매트릭스" in page
+    assert "조문 × 당사자 매트릭스" in page
     assert "</script>" in page  # 데이터 블록이 문서를 깨뜨리지 않았는지
+
+
+def test_render_portal_two_step_selection(tmp_path):
+    """포털은 계약 → 비교본 → 결과 순으로 화면을 나눠 보여준다."""
+    from contract_review_ai.report import PortalContract, render_portal
+
+    before = tmp_path / "v1.txt"
+    after = tmp_path / "v2.txt"
+    before.write_text(V1, encoding="utf-8")
+    after.write_text(V2, encoding="utf-8")
+    result = review_contracts(before, after, backend=OfflineBackend(), progress=None)
+
+    page = render_portal(
+        [PortalContract(contract_id="계약A", title="물류 위탁계약", results=[result])]
+    )
+    assert 'data-screen="contracts"' in page
+    assert 'data-screen="samples"' in page
+    assert 'data-screen="result"' in page
+    assert "물류 위탁계약" in page
+    assert "계약 선택" in page
+    # 결과 패널은 단건 리포트와 같은 마크업을 재사용한다.
+    assert page.count('class="result-panel"') == 1

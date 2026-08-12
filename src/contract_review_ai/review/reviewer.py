@@ -17,7 +17,7 @@ from ..llm.factory import create_backend
 from ..models import ChangeStatus, Party, ReviewResult, RiskLevel
 from ..parsing import load_document
 from ..parties import analyze_impacts, apply_overrides, merge_parties
-from ..risk import analyze_comparison
+from ..risk import analyze_comparison, build_ruleset
 from ..versioning import VersionStore, build_timeline
 
 ProgressFn = Callable[[str], None]
@@ -37,6 +37,8 @@ def review_contracts(
     progress: ProgressFn | None = _default_progress,
     add_parties: list[str] | None = None,
     remove_parties: list[str] | None = None,
+    rule_files: list[str] | None = None,
+    disable_rules: list[str] | None = None,
     contract_id: str = "",
     store: VersionStore | None = None,
     before_version: str = "",
@@ -68,9 +70,13 @@ def review_contracts(
     )
     say(f"당사자 인식: {', '.join(p.display() for p in parties) or '없음'}")
 
+    rules, disabled = build_ruleset(rule_files, disable_rules)
+    if rule_files or disable_rules:
+        say(f"룰셋: {len(rules)}종 적용" + (f", {len(disabled)}종 해제" if disabled else ""))
+
     comparisons = align_documents(before_doc, after_doc)
     for comp in comparisons:
-        comp.flags = analyze_comparison(comp)
+        comp.flags = analyze_comparison(comp, rules, disabled)
         comp.impacts = analyze_impacts(comp, parties)
 
     changed = [c for c in comparisons if c.status is not ChangeStatus.UNCHANGED]
