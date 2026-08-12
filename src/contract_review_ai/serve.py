@@ -7,6 +7,7 @@
 
     GET  /                     워크스페이스 (요청 시 최신 상태로 재생성)
     POST /api/upload           계약서 업로드 → 버전 등록 → 워크스페이스 갱신
+    POST /api/edit             조문 편집 결과를 새 버전으로 저장
     GET  /api/download         Word(.docx) 생성, PDF는 인쇄 화면으로
     GET  /api/export           계약대장·버전대장 CSV
     GET  /api/template         표준 계약서 양식 Word 내려받기
@@ -338,7 +339,11 @@ class Handler(BaseHTTPRequestHandler):
     # ---------------------------------------------------------------- POST
 
     def do_POST(self) -> None:
-        if urllib.parse.urlparse(self.path).path != "/api/upload":
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/api/edit":
+            self._edit()
+            return
+        if path != "/api/upload":
             self._json({"ok": False, "error": "not found"}, status=404)
             return
 
@@ -402,6 +407,47 @@ class Handler(BaseHTTPRequestHandler):
 
         self._json({"ok": bool(added), "added": added, "skipped": skipped})
 
+    def _edit(self) -> None:
+        """조문 편집 결과를 새 버전으로 저장한다.
+
+        등록된 원본은 해시로 고정돼 있어 덮어쓰지 않는다. 편집본은 다음 버전으로
+        쌓이므로, 무엇을 고쳐서 상대방에게 보냈는지가 이력에 그대로 남는다.
+        """
+        length = int(self.headers.get("Content-Length", "0"))
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            self._json({"ok": False, "error": f"요청을 읽을 수 없습니다: {exc}"}, status=400)
+            return
+
+        contract_id = str(payload.get("contract_id", "")).strip()
+        clauses = payload.get("clauses") or []
+        if not contract_id or not clauses:
+            self._json({"ok": False, "error": "계약 ID와 조문이 필요합니다."}, status=400)
+            return
+
+        text = _compose(clauses)
+        base = str(payload.get("base_version", "")).strip()
+        label = str(payload.get("label", "")).strip() or f"{base} 편집본"
+
+        temp_dir = Path(tempfile.mkdtemp(prefix="clausa-edit-"))
+        try:
+            path = temp_dir / f"{_safe(label)}.txt"
+            path.write_text(text, encoding="utf-8")
+            record = self.config.store.add(
+                contract_id,
+                path,
+                label=label,
+                note=str(payload.get("note", "")).strip() or f"{base} 조문 편집",
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            self._json({"ok": False, "error": str(exc)}, status=400)
+            return
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+        self._json({"ok": True, "version": record.version, "label": record.label})
+
     # ---------------------------------------------------------------- 응답
 
     def _send(
@@ -425,6 +471,23 @@ class Handler(BaseHTTPRequestHandler):
             "application/json; charset=utf-8",
             status=status,
         )
+
+
+def _compose(clauses: list[dict]) -> str:
+    """편집된 조문 목록을 계약서 본문으로 되돌린다.
+
+    제목 줄과 본문을 그대로 이어 붙이면 파서가 다시 같은 구조로 읽는다.
+    전문(preamble)은 제목 줄 없이 본문만 쓴다.
+    """
+    blocks = []
+    for clause in clauses:
+        heading = str(clause.get("heading", "")).strip()
+        body = str(clause.get("body", "")).strip()
+        if heading in ("", "전문"):
+            blocks.append(body)
+        else:
+            blocks.append(f"{heading}\n{body}" if body else heading)
+    return "\n\n".join(b for b in blocks if b) + "\n"
 
 
 def _missing_reader(suffix: str) -> str:

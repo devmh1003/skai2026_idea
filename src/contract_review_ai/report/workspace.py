@@ -146,6 +146,19 @@ box-shadow:var(--shadow);overflow:hidden}
 .vdoc-head{display:flex;align-items:center;gap:12px;padding:11px 16px;background:#fbfbfc;
 border-bottom:1px solid var(--line);font-size:13.5px}
 .vdoc-head .ev{margin-left:auto}
+.edit-tools{display:flex;gap:6px;align-items:center}
+.edit-tools input{font:inherit;font-size:12.5px;padding:5px 10px;border-radius:6px;
+border:1px solid var(--line-2);width:150px}
+.vdoc[data-editing="1"] .vclause{background:#fbfcff;border-radius:8px;padding:12px}
+.vclause [contenteditable="true"]{outline:0;border:1px solid var(--line-2);border-radius:6px;
+padding:7px 10px;background:var(--surface)}
+.vclause [contenteditable="true"]:focus{border-color:var(--accent);
+box-shadow:0 0 0 3px var(--accent-soft)}
+.vclause h4[contenteditable="true"]{margin-bottom:7px}
+.editstate{display:none;padding:10px 16px;font-size:12.5px;border-bottom:1px solid var(--line)}
+.editstate[data-on="1"]{display:block}
+.editstate.ok{color:var(--ok)}
+.editstate.err{color:var(--high)}
 .vdoc-body{max-height:520px;overflow:auto;padding:6px 16px 14px}
 .vclause{padding:12px 0;border-bottom:1px solid var(--line)}
 .vclause:last-child{border-bottom:0}
@@ -373,6 +386,7 @@ _APP_JS = r"""
       var detail = row.closest('[data-detail]');
       var target = detail.querySelector('[data-version-doc="' + row.dataset.version + '"]');
       if (!target) return;
+      if (target.dataset.editing === '1') return;
       var opening = target.hidden;
       detail.querySelectorAll('[data-version-doc]').forEach(function(el){ el.hidden = true; });
       detail.querySelectorAll('.vrow').forEach(function(r){ r.setAttribute('aria-expanded','false'); });
@@ -381,6 +395,74 @@ _APP_JS = r"""
       if (opening) target.scrollIntoView({block:'nearest', behavior:'smooth'});
     });
   });
+  // 조문 편집 — 저장하면 다음 버전으로 쌓인다(원본은 건드리지 않는다).
+  document.querySelectorAll('.vdoc').forEach(function(doc){
+    var tools = doc.querySelector('.edit-tools');
+    var label = doc.querySelector('[data-edit="label"]');
+    var state = doc.querySelector('[data-editstate]');
+    var btnEdit = tools.querySelector('[data-act="edit"]');
+    var btnSave = tools.querySelector('[data-act="save-edit"]');
+    var btnCancel = tools.querySelector('[data-act="cancel-edit"]');
+    var original = null;
+
+    function setMode(on){
+      doc.dataset.editing = on ? '1' : '0';
+      doc.querySelectorAll('[data-field]').forEach(function(el){
+        el.setAttribute('contenteditable', String(on));
+      });
+      [label, btnSave, btnCancel].forEach(function(el){ el.hidden = !on; });
+      btnEdit.hidden = on;
+    }
+    function say(kind, message){
+      state.className = 'editstate ' + kind;
+      state.dataset.on = '1';
+      state.textContent = message;
+    }
+
+    btnEdit.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      original = doc.querySelector('.vdoc-body').innerHTML;
+      setMode(true);
+      say('', '조문을 고친 뒤 새 버전으로 저장하십시오. 등록된 원본은 그대로 보존됩니다.');
+    });
+
+    btnCancel.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      if (original !== null) doc.querySelector('.vdoc-body').innerHTML = original;
+      setMode(false);
+      state.dataset.on = '0';
+    });
+
+    btnSave.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      if (!live) {
+        say('err', '저장은 서버 모드에서 동작합니다. 터미널에서 contract-review serve 를 실행하십시오.');
+        return;
+      }
+      var clauses = Array.prototype.map.call(doc.querySelectorAll('[data-clause]'), function(el){
+        return {
+          heading: el.querySelector('[data-field="heading"]').innerText.trim(),
+          body: el.querySelector('[data-field="body"]').innerText.trim()
+        };
+      });
+      say('', '저장 중…');
+      fetch('/api/edit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          contract_id: doc.dataset.contract,
+          base_version: doc.dataset.versionDoc,
+          label: label.value.trim(),
+          clauses: clauses
+        })
+      }).then(function(r){ return r.json(); }).then(function(res){
+        if (!res.ok) { say('err', res.error || '저장에 실패했습니다.'); return; }
+        say('ok', res.version + ' ' + res.label + ' 으로 저장했습니다. 검토를 다시 계산합니다…');
+        setTimeout(function(){ location.reload(); }, 700);
+      }).catch(function(err){ say('err', String(err)); });
+    });
+  });
+
   document.querySelectorAll('[data-act="close-doc"]').forEach(function(btn){
     btn.addEventListener('click', function(ev){
       ev.stopPropagation();
@@ -873,14 +955,23 @@ def _version_docs(entry: ContractEntry) -> str:
         if not clauses:
             continue
         body = "".join(
-            f'<div class="vclause"><h4>{_e(heading)}</h4><p>{_e(text)}</p></div>'
+            f'<div class="vclause" data-clause>'
+            f'<h4 data-field="heading" contenteditable="false">{_e(heading)}</h4>'
+            f'<p data-field="body" contenteditable="false">{_e(text)}</p></div>'
             for heading, text in clauses
         )
         panels.append(
-            f'<div class="vdoc" data-version-doc="{_e(record.version)}" hidden>'
+            f'<div class="vdoc" data-version-doc="{_e(record.version)}" '
+            f'data-contract="{_e(entry.contract_id)}" hidden>'
             f'<div class="vdoc-head"><b>{_e(record.version)} {_e(record.label)}</b>'
             f'<span class="ev">조문 {len(clauses)}건 · {_e(record.imported_at[:16])}</span>'
-            f'<button class="mini" data-act="close-doc">닫기</button></div>'
+            f'<span class="edit-tools">'
+            f'<input data-edit="label" placeholder="새 버전 라벨" hidden>'
+            f'<button class="mini" data-act="edit">조문 편집</button>'
+            f'<button class="mini primary" data-act="save-edit" hidden>새 버전으로 저장</button>'
+            f'<button class="mini" data-act="cancel-edit" hidden>취소</button>'
+            f'<button class="mini" data-act="close-doc">닫기</button></span></div>'
+            f'<div class="editstate" data-editstate></div>'
             f'<div class="vdoc-body">{body}</div></div>'
         )
     return "".join(panels)
