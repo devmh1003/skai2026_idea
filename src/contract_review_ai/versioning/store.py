@@ -81,6 +81,38 @@ class VersionStore:
     def title(self, contract_id: str) -> str:
         return self.load(contract_id).get("title", "") or contract_id
 
+    def parties(self, contract_id: str) -> list[str]:
+        """계약 등록 시 지정한 당사자 표기.
+
+        `약칭[=상호][:역할]` 형식이며, 앞에 `-`를 붙이면 자동 인식된 당사자를 제외한다.
+        조문에서 당사자를 자동으로 뽑기는 하지만, 정의 문언이 없는 각서나 예시 문구를
+        잘못 잡는 계약이 있어 등록 단계에서 한 번 확정해 둔다.
+        """
+        return [str(item) for item in self.load(contract_id).get("parties", []) if str(item).strip()]
+
+    def set_parties(self, contract_id: str, specs: list[str]) -> None:
+        manifest = self.load(contract_id)
+        manifest["contract_id"] = contract_id
+        manifest["parties"] = [s.strip() for s in specs if s.strip()]
+        manifest.setdefault("versions", [])
+        path = self.manifest_path(contract_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    @staticmethod
+    def split_party_specs(specs: list[str]) -> tuple[list[str], list[str]]:
+        """(추가·보정할 당사자, 제외할 당사자)로 나눈다."""
+        add, remove = [], []
+        for spec in specs:
+            spec = spec.strip()
+            if not spec:
+                continue
+            if spec.startswith("-"):
+                remove.append(spec[1:].strip())
+            else:
+                add.append(spec)
+        return add, remove
+
     def add(
         self,
         contract_id: str,
@@ -100,6 +132,7 @@ class VersionStore:
         manifest["contract_id"] = contract_id
         manifest["title"] = title or manifest.get("title") or contract_id
         manifest["category"] = category or manifest.get("category") or ""
+        manifest.setdefault("parties", [])
 
         records = [VersionRecord(**v) for v in manifest.get("versions", [])]
         digest = _sha256(source)

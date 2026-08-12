@@ -1,4 +1,4 @@
-"""샘플 계약서 5종 × 5버전을 생성하고 버전 저장소에 등록한다.
+"""샘플 계약서 10종 × 7버전을 생성하고 버전 저장소에 등록한다.
 
     python scripts/make_samples.py            # 생성 + 등록
     python scripts/make_samples.py --files-only   # 파일만 생성
@@ -12,46 +12,17 @@ from __future__ import annotations
 
 import argparse
 import sys
-from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from sample_library import EXTRA_SAMPLES, FOLLOW_UP, Revision, Sample  # noqa: E402
+
 from contract_review_ai.console import force_utf8  # noqa: E402
 from contract_review_ai.versioning import VersionStore  # noqa: E402
 
 SAMPLES = ROOT / "data" / "samples"
-
-
-@dataclass
-class Revision:
-    """한 버전에서 일어난 변경."""
-
-    label: str
-    note: str = ""
-    edits: dict[str, str] = field(default_factory=dict)
-    """조 제목 → 새 본문."""
-
-    drops: tuple[str, ...] = ()
-    """삭제할 조 제목."""
-
-    adds: tuple[tuple[str, str], ...] = ()
-    """(제목, 본문) — 맨 뒤에 신설."""
-
-    renames: dict[str, str] = field(default_factory=dict)
-    """조 제목 변경 (내용 확장 시)."""
-
-
-@dataclass
-class Sample:
-    slug: str
-    contract_id: str
-    title: str
-    category: str
-    preamble: str
-    clauses: list[tuple[str, str]]
-    revisions: list[Revision]
 
 
 def render(preamble: str, clauses: list[tuple[str, str]]) -> str:
@@ -402,7 +373,15 @@ OUTSOURCING = Sample(
     ],
 )
 
-SAMPLE_SET = [SW, SUPPLY, LEASE, NDA, OUTSOURCING]
+def _load_library() -> list[Sample]:
+    """추가 계약 5종을 붙이고, 기존 5종에 후속 협상 회차를 이어 붙인다."""
+    base = [SW, SUPPLY, LEASE, NDA, OUTSOURCING]
+    for sample in base:
+        sample.revisions.extend(FOLLOW_UP.get(sample.contract_id, []))
+    return base + EXTRA_SAMPLES
+
+
+SAMPLE_SET = _load_library()
 
 
 def build(sample: Sample) -> list[tuple[str, str, str]]:

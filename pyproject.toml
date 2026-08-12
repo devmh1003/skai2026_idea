@@ -32,6 +32,9 @@ select = ["E", "F", "I", "UP"]
 [tool.ruff.lint.per-file-ignores]
 # 계약 조문 원문은 임의로 줄바꿈하면 샘플로서 의미가 훼손된다.
 "scripts/make_samples.py" = ["E501"]
+"scripts/sample_library.py" = ["E501"]
+# OOXML 상수는 한 줄로 두어야 그대로 붙여 넣어 확인할 수 있다.
+"src/contract_review_ai/report/docx.py" = ["E501"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

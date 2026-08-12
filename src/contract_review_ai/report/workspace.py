@@ -130,7 +130,36 @@ border-bottom:1px solid var(--line);font-size:13px}
 .sec h3{font-size:14px;font-weight:600;margin:0 0 10px}
 .sec .hint{font-size:12.5px;color:var(--muted);margin:0 0 10px}
 .filters{display:flex;gap:6px;flex-wrap:wrap}
-.upload-card .card{padding:14px 16px}
+.tpl-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(268px,1fr))}
+.tpl{display:flex;flex-direction:column;gap:12px;background:var(--surface);
+border:1px solid var(--line);border-radius:10px;padding:16px 18px;box-shadow:var(--shadow);
+transition:border-color .14s,box-shadow .14s}
+.tpl:hover{border-color:var(--accent);box-shadow:0 6px 18px rgba(16,24,40,.08)}
+.tpl h4{margin:6px 0 4px;font-size:14.5px;font-weight:600}
+.tpl p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.6}
+.tpl button{align-self:flex-start;margin-top:auto}
+.vrow{cursor:pointer}
+.vrow:hover{background:#f8fafc}
+.vrow[aria-expanded="true"]{background:var(--accent-soft)}
+.vdoc{margin-top:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);
+box-shadow:var(--shadow);overflow:hidden}
+.vdoc-head{display:flex;align-items:center;gap:12px;padding:11px 16px;background:#fbfbfc;
+border-bottom:1px solid var(--line);font-size:13.5px}
+.vdoc-head .ev{margin-left:auto}
+.vdoc-body{max-height:520px;overflow:auto;padding:6px 16px 14px}
+.vclause{padding:12px 0;border-bottom:1px solid var(--line)}
+.vclause:last-child{border-bottom:0}
+.vclause h4{margin:0 0 5px;font-size:13.5px;font-weight:600;color:var(--accent)}
+.vclause p{margin:0;font-size:13px;line-height:1.75;color:var(--ink-2);white-space:pre-wrap}
+.upload-card .card{padding:18px 20px}
+.frow{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+.frow label{display:flex;flex-direction:column;gap:5px;flex:1 1 220px;font-size:12px;
+font-weight:600;color:var(--muted)}
+.frow input{font:inherit;font-size:13.5px;font-weight:400;color:var(--ink);padding:8px 12px;
+border-radius:8px;border:1px solid var(--line-2);background:var(--surface)}
+.frow input:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.fhint{font-size:11.5px;font-weight:400;color:var(--muted);line-height:1.5}
+.fhint code{background:#f2f4f7;padding:1px 5px;border-radius:4px}
 .upload-card input[type="file"]{color:var(--muted)}
 .upstate{font-size:12.5px;margin-top:10px;display:none}
 .upstate[data-on="1"]{display:block}
@@ -210,7 +239,7 @@ animation:grow .7s cubic-bezier(.22,1,.36,1) both}
 ::-webkit-scrollbar-thumb:hover{background:#b9c0cc}
 """
 
-_APP_JS = """
+_APP_JS = r"""
 (function(){
   // data-view는 결과 패널의 보기 전환 칩도 쓰므로, 앱 화면은 전용 속성을 쓴다.
   var views = {};
@@ -254,15 +283,17 @@ _APP_JS = """
     window.scrollTo(0, 0);
   }
 
-  function goDashboard(){ show('dashboard'); crumbs([{label:'대시보드'}]); }
-  function goContracts(){ show('contracts'); crumbs([{label:'계약'}]); }
+  function goDashboard(){ show('dashboard'); crumbs([{label:'현황관리'}]); }
+  function goContracts(){ show('contracts'); crumbs([{label:'계약상세'}]); }
+  function goCreate(){ show('create'); crumbs([{label:'계약생성'}]); }
+  function goCustomers(){ show('customers'); crumbs([{label:'고객관리'}]); }
 
   function goDetail(id, title){
     document.querySelectorAll('[data-detail]').forEach(function(el){
       el.hidden = (el.dataset.detail !== id);
     });
     show('detail');
-    crumbs([{label:'계약', go:goContracts}, {label:title}]);
+    crumbs([{label:'계약상세', go:goContracts}, {label:title}]);
   }
 
   function goResult(key, contractId, contractTitle, label){
@@ -271,15 +302,21 @@ _APP_JS = """
     });
     show('result');
     crumbs([
-      {label:'계약', go:goContracts},
+      {label:'계약상세', go:goContracts},
       {label:contractTitle, go:function(){ goDetail(contractId, contractTitle); }},
       {label:label}
     ]);
   }
 
+  var routes = {
+    dashboard: goDashboard,
+    contracts: goContracts,
+    create: goCreate,
+    customers: goCustomers
+  };
   navButtons.forEach(function(btn){
     btn.addEventListener('click', function(){
-      if (btn.dataset.goto === 'contracts') goContracts(); else goDashboard();
+      (routes[btn.dataset.goto] || goDashboard)();
     });
   });
 
@@ -330,161 +367,24 @@ _APP_JS = """
   }
   refresh();
 
-  // ── 당사자 관리 ───────────────────────────────────
-  // 편집 결과는 브라우저에 저장돼 다시 열어도 유지된다. 서버가 없는 파일이므로
-  // localStorage가 유일한 저장소다.
-  document.querySelectorAll('[data-party-manager]').forEach(function(box){
-    var contractId = box.dataset.partyManager;
-    var key = 'clausa:parties:' + contractId;
-    var state = {};
-    try { state = JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) { state = {}; }
-    state.edits = state.edits || {};
-    state.hidden = state.hidden || [];
-    state.added = state.added || [];
-
-    var tbody = box.querySelector('tbody');
-    var notice = box.querySelector('[data-notice]');
-    var cmdBox = box.querySelector('[data-cmd]');
-
-    function save(){ localStorage.setItem(key, JSON.stringify(state)); }
-
-    function labelOf(row){
-      var alias = row.querySelector('[data-field="alias"]').value.trim();
-      var name = row.querySelector('[data-field="name"]').value.trim();
-      var role = row.querySelector('[data-field="role"]').value.trim();
-      var out = alias;
-      if (name && name !== alias) out += ' (' + name + ')';
-      if (role) out += ' · ' + role;
-      return {alias: alias, name: name, role: role, label: out};
-    }
-
-    function applyRow(row){
-      var id = row.dataset.partyRow;
-      var v = labelOf(row);
-      var hidden = row.dataset.hidden === '1';
-      document.querySelectorAll('[data-party="' + id + '"]').forEach(function(el){
-        el.style.display = hidden ? 'none' : '';
-        if (el.hasAttribute('data-party-label')) el.textContent = v.label;
-        if (el.hasAttribute('data-party-alias')) {
-          el.textContent = v.alias + (el.classList.contains('adverse') ? ' 불리' : ' 유리');
-        }
-      });
-      document.querySelectorAll('tr[data-party="' + id + '"]').forEach(function(tr){
-        tr.style.display = hidden ? 'none' : '';
-      });
-    }
-
-    function applyAll(){ tbody.querySelectorAll('[data-party-row]').forEach(applyRow); }
-
-    function renderRemoved(){
-      var box2 = box.querySelector('[data-removed]');
-      var list = box.querySelector('[data-removed-list]');
-      if (!box2 || !list) return;
-      list.innerHTML = '';
-      state.hidden.forEach(function(id){
-        var btn = document.createElement('button');
-        btn.dataset.act = 'restore';
-        btn.dataset.restore = id;
-        btn.textContent = id + ' 되돌리기';
-        list.appendChild(btn);
-      });
-      box2.hidden = state.hidden.length === 0;
-      box2.dataset.on = state.hidden.length ? '1' : '0';
-    }
-
-    function refreshNotice(){
-      if (!state.added.length) { notice.dataset.on = '0'; return; }
-      notice.dataset.on = '1';
-      var flags = state.added.map(function(p){
-        var spec = p.alias + (p.name ? '=' + p.name : '') + (p.role ? ':' + p.role : '');
-        return '--add-party "' + spec + '"';
-      }).join(' ');
-      cmdBox.textContent = 'contract-review workspace ' + contractId + ' ' + flags;
-    }
-
-    // 저장된 편집 복원
-    tbody.querySelectorAll('[data-party-row]').forEach(function(row){
-      var id = row.dataset.partyRow;
-      var saved = state.edits[id];
-      if (saved) {
-        ['alias','name','role'].forEach(function(f){
-          if (saved[f] !== undefined) row.querySelector('[data-field="'+f+'"]').value = saved[f];
-        });
-      }
-      if (state.hidden.indexOf(id) >= 0) row.dataset.hidden = '1';
+  // ── 버전 원문 펼치기 ──────────────────────────────
+  document.querySelectorAll('.vrow').forEach(function(row){
+    row.addEventListener('click', function(){
+      var detail = row.closest('[data-detail]');
+      var target = detail.querySelector('[data-version-doc="' + row.dataset.version + '"]');
+      if (!target) return;
+      var opening = target.hidden;
+      detail.querySelectorAll('[data-version-doc]').forEach(function(el){ el.hidden = true; });
+      detail.querySelectorAll('.vrow').forEach(function(r){ r.setAttribute('aria-expanded','false'); });
+      target.hidden = !opening;
+      row.setAttribute('aria-expanded', String(opening));
+      if (opening) target.scrollIntoView({block:'nearest', behavior:'smooth'});
     });
-    state.added.forEach(function(p){ addRow(p, false); });
-    applyAll();
-    renderRemoved();
-    refreshNotice();
-
-    function addRow(party, persist){
-      var tr = document.createElement('tr');
-      tr.dataset.partyRow = party.id;
-      tr.dataset.hidden = '0';
-      tr.dataset.addedRow = '1';
-      tr.innerHTML =
-        '<td><input data-field="alias" value="' + party.alias + '"></td>' +
-        '<td><input data-field="name" value="' + (party.name || '') + '"></td>' +
-        '<td><input data-field="role" value="' + (party.role || '') + '"></td>' +
-        '<td style="text-align:right"><span class="badge medium">재실행 필요</span> ' +
-        '<button class="mini danger" data-act="remove">삭제</button></td>';
-      tbody.appendChild(tr);
-      if (persist) { state.added.push(party); save(); refreshNotice(); }
-    }
-
-    box.addEventListener('input', function(ev){
-      var row = ev.target.closest('[data-party-row]');
-      if (!row || !ev.target.dataset.field) return;
-      var v = labelOf(row);
-      state.edits[row.dataset.partyRow] = {alias:v.alias, name:v.name, role:v.role};
-      save();
-      applyRow(row);
-    });
-
-    box.addEventListener('click', function(ev){
-      var act = ev.target.dataset.act;
-      if (!act) return;
-      var row = ev.target.closest('[data-party-row]');
-
-      if (act === 'toggle') {
-        var id = row.dataset.partyRow;
-        row.dataset.hidden = '1';
-        if (state.hidden.indexOf(id) < 0) state.hidden.push(id);
-        save();
-        applyRow(row);
-        renderRemoved();
-      } else if (act === 'restore') {
-        var rid2 = ev.target.dataset.restore;
-        state.hidden = state.hidden.filter(function(x){ return x !== rid2; });
-        save();
-        var target = tbody.querySelector('[data-party-row="' + rid2 + '"]');
-        if (target) { target.dataset.hidden = '0'; applyRow(target); }
-        renderRemoved();
-      } else if (act === 'reset') {
-        delete state.edits[row.dataset.partyRow];
-        save();
-        location.reload();
-      } else if (act === 'remove') {
-        var rid = row.dataset.partyRow;
-        state.added = state.added.filter(function(p){ return p.id !== rid; });
-        save();
-        row.remove();
-        refreshNotice();
-      } else if (act === 'add') {
-        var alias = box.querySelector('[data-new="alias"]').value.trim();
-        if (!alias) return;
-        var party = {
-          id: alias,
-          alias: alias,
-          name: box.querySelector('[data-new="name"]').value.trim(),
-          role: box.querySelector('[data-new="role"]').value.trim()
-        };
-        addRow(party, true);
-        ['alias','name','role'].forEach(function(f){
-          box.querySelector('[data-new="'+f+'"]').value = '';
-        });
-      }
+  });
+  document.querySelectorAll('[data-act="close-doc"]').forEach(function(btn){
+    btn.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      btn.closest('[data-version-doc]').hidden = true;
     });
   });
 
@@ -512,6 +412,14 @@ _APP_JS = """
             + '또는 contract-review review --contract ' + params.contract
             + ' --from ' + params.from + ' --to ' + params.to
             + ' --format ' + params.format);
+    });
+  });
+
+  document.querySelectorAll('[data-template]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      if (live) { window.location = '/api/template?id=' + btn.dataset.template; return; }
+      alert('양식 내려받기는 서버 모드에서 동작합니다. '
+            + 'data/templates 폴더의 원본을 직접 열 수도 있습니다.');
     });
   });
 
@@ -545,6 +453,14 @@ _APP_JS = """
       var contractId = get('contract_id');
       if (!contractId) { say('err', '계약 ID를 입력하십시오.'); return; }
       if (!input.files.length) { say('err', '올릴 파일을 선택하십시오.'); return; }
+      var wrong = Array.prototype.filter.call(input.files, function(f){
+        return !/\.(hwp|hwpx|docx|pdf)$/i.test(f.name);
+      });
+      if (wrong.length) {
+        say('err', '한글(.hwp/.hwpx), Word(.docx), PDF만 올릴 수 있습니다: ' +
+            wrong.map(function(f){ return f.name; }).join(', '));
+        return;
+      }
 
       var names = Array.prototype.map.call(input.files, function(f){ return f.name; });
       if (!live) {
@@ -555,7 +471,7 @@ _APP_JS = """
 
       var form = new FormData();
       form.append('contract_id', contractId);
-      ['title','category','labels','note'].forEach(function(f){
+      ['title','category','labels','parties','note'].forEach(function(f){
         if (get(f)) form.append(f, get(f));
       });
       Array.prototype.forEach.call(input.files, function(f){ form.append('files', f); });
@@ -588,6 +504,8 @@ class ContractEntry:
     versions: list[VersionRecord] = field(default_factory=list)
     timeline: list[TimelineStep] = field(default_factory=list)
     results: list[ReviewResult] = field(default_factory=list)
+    texts: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
+    """버전별 조문 원문 — {버전: [(조문 제목, 본문), …]}."""
 
     @property
     def label(self) -> str:
@@ -644,14 +562,13 @@ def render_workspace(entries: list[ContractEntry]) -> str:
       <div class="tag">{TAGLINE}</div>
     </div>
   </div>
-  <div class="grp">워크스페이스</div>
-  <button data-goto="dashboard" aria-current="true"><span>대시보드</span></button>
-  <button data-goto="contracts"><span>계약</span><span class="cnt">{len(entries)}</span></button>
-  <div class="grp">현황</div>
-  <button disabled style="opacity:.45;cursor:default">
-    <span>검토 대상 조문</span><span class="cnt">{total_high}</span></button>
-  <button disabled style="opacity:.45;cursor:default">
-    <span>등록 버전</span><span class="cnt">{total_versions}</span></button>
+  <div class="grp">메뉴</div>
+  <button data-goto="dashboard" aria-current="true"><span>현황관리</span></button>
+  <button data-goto="contracts"><span>계약상세</span>
+    <span class="cnt">{len(entries)}</span></button>
+  <button data-goto="create"><span>계약생성</span></button>
+  <button data-goto="customers"><span>고객관리</span>
+    <span class="cnt">{_party_total(entries)}</span></button>
   <div class="foot">
     계약 {len(entries)}건 · 버전 {total_versions}개<br>마지막 분석 {_e(_last_run(entries))}
   </div>
@@ -669,6 +586,14 @@ def render_workspace(entries: list[ContractEntry]) -> str:
 
 <div class="view" data-app-view="contracts" hidden>
 {_contracts_view(entries, categories)}
+</div>
+
+<div class="view" data-app-view="create" hidden>
+{_create_view()}
+</div>
+
+<div class="view" data-app-view="customers" hidden>
+{_customers_view(entries)}
 </div>
 
 <div class="view" data-app-view="detail" hidden>
@@ -735,8 +660,8 @@ def _dashboard(entries, total_versions: int, total_high: int, total_changes: int
     return f"""<div class="vhead">
   <div><h2>대시보드</h2><p>계약 포트폴리오와 최근 개정 활동을 한눈에 확인합니다.</p></div>
   <div class="right">
-    <button class="mini" data-export="contracts">계약대장 CSV</button>
-    <button class="mini" data-export="versions">버전대장 CSV</button>
+    <button class="mini" data-export="contracts">계약대장</button>
+    <button class="mini" data-export="versions">버전대장</button>
   </div>
 </div>
 <div class="kpis">{kpi_html}</div>
@@ -785,7 +710,6 @@ def _contracts_view(entries, categories: list[str]) -> str:
   </div>
 </div>
 <div class="filters" style="margin-bottom:14px">{chips}</div>
-{_uploader()}
 <div class="tbl"><table>
 <thead><tr><th>계약</th><th>분류</th><th style="text-align:right">버전</th><th>최신</th>
 <th style="text-align:right">쟁점</th><th>최종 등록</th></tr></thead>
@@ -796,17 +720,20 @@ def _contracts_view(entries, categories: list[str]) -> str:
 
 
 def _detail_view(entry: ContractEntry, index: int) -> str:
+    changes = {step.to_version: step for step in entry.timeline}
     version_rows = "".join(
-        "<tr><td><span class='badge"
+        f'<tr data-version="{_e(record.version)}" class="vrow">'
+        "<td><span class='badge"
         + (" latest" if record.version == entry.latest else "")
         + f"'>{_e(record.version)}</span></td>"
         f'<td><div class="name">{_e(record.label)}</div>'
         + (f'<div class="sub">{_e(record.note)}</div>' if record.note else "")
         + "</td>"
+        f'<td>{_change_note(changes.get(record.version))}</td>'
         f'<td class="mono">{_e(record.imported_at[:16])}</td>'
         f'<td class="mono">{_e(record.sha256[:12])}…</td></tr>'
         for record in entry.versions
-    ) or '<tr><td colspan="4" class="ev">등록된 버전이 없습니다.</td></tr>'
+    ) or '<tr><td colspan="5" class="ev">등록된 버전이 없습니다.</td></tr>'
 
     steps = "".join(
         f'<div class="it"><div class="when">{_e(step.from_version)} → {_e(step.to_version)}</div>'
@@ -840,18 +767,17 @@ def _detail_view(entry: ContractEntry, index: int) -> str:
             else '<span class="ev">–</span>'
         )
         + "</td>"
-        + f'<td style="text-align:right;white-space:nowrap">'
-        f'<button class="mini" data-dl="csv" data-contract="{_e(entry.contract_id)}" '
+        + '<td style="text-align:right;white-space:nowrap">'
+        + f'<button class="mini" data-dl="docx" data-contract="{_e(entry.contract_id)}" '
         f'data-from="{_e(result.before_doc.version)}" data-to="{_e(result.after_doc.version)}">'
-        "CSV</button> "
-        f'<button class="mini" data-dl="md" data-contract="{_e(entry.contract_id)}" '
+        "Word</button> "
+        f'<button class="mini" data-dl="pdf" data-contract="{_e(entry.contract_id)}" '
         f'data-from="{_e(result.before_doc.version)}" data-to="{_e(result.after_doc.version)}">'
-        "MD</button></td></tr>"
+        "PDF</button></td></tr>"
         for order, result in enumerate(entry.results)
     ) or '<tr><td colspan="5" class="ev">검토된 비교본이 없습니다.</td></tr>'
 
     parties = " / ".join(_e(p) for p in entry.parties) or "인식된 당사자 없음"
-    roster = _party_manager(entry)
 
     return f"""<div data-detail="{_e(entry.contract_id)}" hidden>
 <div class="vhead">
@@ -861,10 +787,8 @@ def _detail_view(entry: ContractEntry, index: int) -> str:
     · 당사자 {parties}</p>
   </div>
   <div class="right">
-    <button class="mini" data-dl="csv" data-contract="{_e(entry.contract_id)}">CSV</button>
-    <button class="mini" data-dl="md" data-contract="{_e(entry.contract_id)}">Markdown</button>
-    <button class="mini" data-dl="html" data-contract="{_e(entry.contract_id)}">HTML</button>
-    <button class="mini" data-dl="json" data-contract="{_e(entry.contract_id)}">JSON</button>
+    <button class="mini" data-dl="docx" data-contract="{_e(entry.contract_id)}">Word</button>
+    <button class="mini" data-dl="pdf" data-contract="{_e(entry.contract_id)}">PDF</button>
     <span class="badge">버전 {len(entry.versions)}</span>
     {f'<span class="badge">검토 대상 {entry.flagged}</span>' if entry.flagged else ""}
     {f'<span class="badge">쟁점 {entry.issues}</span>' if entry.issues else ""}
@@ -873,15 +797,13 @@ def _detail_view(entry: ContractEntry, index: int) -> str:
 
 <div class="sec">
   <h3>버전 관리</h3>
-  <p class="hint">등록된 원본은 SHA-256으로 고정됩니다. 협상 기록으로 그대로 인용할 수 있습니다.</p>
+  <p class="hint">등록된 원본은 SHA-256으로 고정됩니다. 버전을 선택하면 그 시점의 조문 전문을 봅니다.</p>
   <div class="tbl"><table>
-  <thead><tr><th>버전</th><th>라벨</th><th>등록 일시</th><th>해시</th></tr></thead>
+  <thead><tr><th>버전</th><th>라벨</th><th>주요 변경</th><th>등록 일시</th>
+  <th>해시</th></tr></thead>
   <tbody>{version_rows}</tbody></table></div>
+  {_version_docs(entry)}
 </div>
-
-{_uploader(entry)}
-
-{roster}
 
 <div class="detail-grid">
   <div class="card"><h2>개정 타임라인</h2><div class="feed">{steps}</div></div>
@@ -901,92 +823,152 @@ def _detail_view(entry: ContractEntry, index: int) -> str:
 
 
 def _uploader(entry: ContractEntry | None = None) -> str:
-    """계약서 업로드 카드.
+    """계약 등록 카드.
 
     서버 모드(`contract-review serve`)에서는 실제로 파일이 저장되고 버전이 등록된다.
     파일을 그냥 열었을 때는 저장할 곳이 없으므로, 같은 입력으로 실행할 CLI 명령을
     만들어 준다 — 되는 척하지 않는다.
     """
-    if entry is None:
-        head = "계약 등록"
-        hint = "새 계약을 만들거나 기존 계약에 원본을 올립니다. hwpx·hwp·docx·pdf·txt 지원."
-        id_field = '<input data-up="contract_id" placeholder="계약 ID (예: 2026-용역-007)">'
-        meta = (
-            '<input data-up="title" placeholder="계약명">'
-            '<input data-up="category" placeholder="분류 (예: 용역·도급)">'
-        )
-    else:
-        head = "버전 추가"
-        hint = "협상 회차마다 받은 수정본을 올리면 다음 버전으로 등록됩니다."
-        id_field = (
-            f'<input data-up="contract_id" value="{_e(entry.contract_id)}" readonly '
-            'style="background:#f7f8fa">'
-        )
-        meta = '<input data-up="labels" placeholder="버전 라벨 (예: 상대방 2차)">'
-
-    return f"""<div class="sec upload-card" data-uploader>
-  <h3>{head}</h3>
-  <p class="hint">{hint}</p>
+    return """<div class="sec upload-card" data-uploader>
   <div class="card">
-    <div class="addrow" style="border:0;margin:0;padding:0">
-      {id_field}
-      {meta}
-      <input type="file" data-up="files" multiple
-        style="flex:2 1 240px;font-size:12.5px;padding:6px 0">
-      <button class="mini primary" data-act="upload">올리기</button>
+    <div class="frow">
+      <label>계약 ID<input data-up="contract_id" placeholder="예: 2026-용역-007"></label>
+      <label>계약명<input data-up="title" placeholder="예: AI 플랫폼 구축 용역"></label>
+      <label>분류<input data-up="category" placeholder="예: 용역·도급"></label>
+    </div>
+    <div class="frow">
+      <label style="flex:2 1 420px">당사자
+        <input data-up="parties"
+          placeholder="갑=주식회사 가나다:발주자, 을=주식회사 라마바:수급인, 병=...">
+        <span class="fhint">약칭=상호:역할 형식으로 쉼표 구분. 비워 두면 계약서에서 자동 인식합니다.
+        자동 인식된 당사자를 빼려면 <code>-병</code> 처럼 앞에 -를 붙입니다.</span>
+      </label>
+      <label>버전 라벨<input data-up="labels" placeholder="예: 당사 초안|상대방 1차"></label>
+    </div>
+    <div class="frow">
+      <label style="flex:2 1 380px">계약서 파일
+        <input type="file" data-up="files" multiple accept=".hwp,.hwpx,.docx,.pdf">
+        <span class="fhint">한글(.hwp/.hwpx), Word(.docx), PDF를 올릴 수 있습니다.
+        여러 개를 올리면 v1, v2… 순서로 등록됩니다.</span>
+      </label>
+      <button class="mini primary" data-act="upload" style="align-self:flex-end">등록하기</button>
     </div>
     <div class="upstate" data-upstate></div>
   </div>
 </div>"""
 
 
-def _party_manager(entry: ContractEntry) -> str:
-    """당사자 명부 편집기.
+def _version_docs(entry: ContractEntry) -> str:
+    """버전 행을 눌렀을 때 펼쳐지는 조문 전문.
 
-    표기(약칭·상호·역할) 수정과 제외는 이 페이지에서 즉시 반영된다 — 검토 결과의
-    영향 매트릭스 열과 조문 배지까지 함께 바뀐다. 반면 당사자를 새로 추가하면
-    권리·의무 점수를 다시 계산해야 하므로, 재실행 명령을 함께 띄운다.
+    비교 결과만 보다 보면 "이 버전 원문이 실제로 어땠더라"를 확인할 데가 없다.
+    등록된 파일을 파싱한 그대로를 붙여, 인용할 때 원본을 다시 열지 않아도 되게 한다.
     """
-    parties = _roster(entry)
-    rows = "".join(
-        f'<tr data-party-row="{_e(p["id"])}" data-hidden="0">'
-        f'<td style="width:110px"><input data-field="alias" value="{_e(p["alias"])}"></td>'
-        f'<td><input data-field="name" value="{_e(p["name"])}" placeholder="상호"></td>'
-        f'<td style="width:150px"><input data-field="role" value="{_e(p["role"])}" '
-        f'placeholder="역할"></td>'
-        f'<td style="width:150px;text-align:right;white-space:nowrap">'
-        f'<button class="mini" data-act="reset">되돌리기</button> '
-        f'<button class="mini danger" data-act="toggle">삭제</button></td></tr>'
-        for p in parties
-    ) or '<tr><td colspan="4" class="ev">인식된 당사자가 없습니다.</td></tr>'
+    if not entry.texts:
+        return ""
 
-    return f"""<div class="sec" data-party-manager="{_e(entry.contract_id)}">
-  <h3>당사자 관리</h3>
-  <p class="hint">약칭·상호·역할을 고치면 검토 결과의 영향 매트릭스와 조문 배지에 즉시 반영됩니다.
-  삭제한 당사자는 목록과 검토 결과에서 모두 사라지며, 아래에서 되돌릴 수 있습니다.</p>
-  <div class="tbl party-tbl"><table>
-  <thead><tr><th>약칭</th><th>상호</th><th>역할</th><th style="text-align:right">동작</th></tr></thead>
-  <tbody>{rows}</tbody></table>
-  <div style="padding:0 14px 14px">
-    <div class="addrow">
-      <input data-new="alias" placeholder="약칭 (예: 정)">
-      <input data-new="name" placeholder="상호 (예: 주식회사 한울)">
-      <input data-new="role" placeholder="역할 (예: 연대보증인)">
-      <button class="mini primary" data-act="add">당사자 추가</button>
-    </div>
-    <div class="removed" data-removed hidden>
-      <span class="lb">삭제된 당사자</span>
-      <span data-removed-list></span>
-    </div>
-    <div class="notice" data-notice>
-      <div>
-        <b>추가한 당사자는 재실행이 필요합니다.</b>
-        권리·의무 점수는 조문 원문을 다시 읽어야 계산됩니다. 아래 명령으로 재생성하십시오.
-        <code data-cmd></code>
-      </div>
-    </div>
-  </div></div>
+    panels = []
+    for record in entry.versions:
+        clauses = entry.texts.get(record.version)
+        if not clauses:
+            continue
+        body = "".join(
+            f'<div class="vclause"><h4>{_e(heading)}</h4><p>{_e(text)}</p></div>'
+            for heading, text in clauses
+        )
+        panels.append(
+            f'<div class="vdoc" data-version-doc="{_e(record.version)}" hidden>'
+            f'<div class="vdoc-head"><b>{_e(record.version)} {_e(record.label)}</b>'
+            f'<span class="ev">조문 {len(clauses)}건 · {_e(record.imported_at[:16])}</span>'
+            f'<button class="mini" data-act="close-doc">닫기</button></div>'
+            f'<div class="vdoc-body">{body}</div></div>'
+        )
+    return "".join(panels)
+
+
+def _party_total(entries: list[ContractEntry]) -> int:
+    return sum(len(e.parties) for e in entries)
+
+
+def _change_note(step) -> str:
+    """버전 한 줄 요약 — 이 버전에서 무엇이 바뀌었는지."""
+    if step is None:
+        return '<span class="ev">최초 등록본</span>'
+
+    counts = []
+    if step.modified:
+        counts.append(f"수정 {step.modified}")
+    if step.added:
+        counts.append(f"신설 {step.added}")
+    if step.deleted:
+        counts.append(f"삭제 {step.deleted}")
+    head = " · ".join(counts) or "변경 없음"
+
+    detail = ""
+    if step.headings:
+        names = [h.split("(")[-1].rstrip(")") for h in step.headings[:3]]
+        more = f" 외 {len(step.headings) - 3}건" if len(step.headings) > 3 else ""
+        detail = f'<div class="sub">{_e(", ".join(names))}{more}</div>'
+    return f"<div>{_e(head)}</div>{detail}"
+
+
+def _create_view() -> str:
+    from ..templates import TEMPLATES
+
+    cards = "".join(
+        f'<div class="tpl">'
+        f'<div class="tpl-body"><div class="eyebrow">{_e(t.category)}</div>'
+        f"<h4>{_e(t.title)}</h4><p>{_e(t.summary)}</p></div>"
+        f'<button class="mini" data-template="{_e(t.id)}">양식 받기</button></div>'
+        for t in TEMPLATES
+    )
+
+    return f"""<div class="vhead">
+  <div><h2>계약생성</h2>
+    <p>계약을 등록하고 당사자를 지정합니다. 등록한 당사자는 이후 모든 비교본에 적용됩니다.</p>
+  </div>
+</div>
+{_uploader()}
+
+<div class="sec">
+  <h3>표준 계약서 양식</h3>
+  <p class="hint">초안이 없다면 표준 양식을 Word로 받아 수정한 뒤 그대로 올리십시오.</p>
+  <div class="tpl-grid">{cards}</div>
 </div>"""
+
+
+def _customers_view(entries: list[ContractEntry]) -> str:
+    rows = []
+    for entry in entries:
+        roster = _roster(entry)
+        if roster:
+            people = "".join(
+                f'<div><b>{_e(p["alias"])}</b> {_e(p["name"] or "-")}'
+                + (f' <span class="badge">{_e(p["role"])}</span>' if p["role"] else "")
+                + "</div>"
+                for p in roster
+            )
+        else:
+            people = '<span class="ev">인식된 당사자가 없습니다.</span>'
+        rows.append(
+            f'<tr data-open="{_e(entry.contract_id)}" data-title="{_e(entry.label)}">'
+            f'<td><div class="name">{_e(entry.label)}</div>'
+            f'<div class="sub">{_e(entry.contract_id)}</div></td>'
+            f'<td><span class="badge cat">{_e(entry.category)}</span></td>'
+            f"<td>{people}</td>"
+            f'<td class="num">{len(roster)}</td></tr>'
+        )
+
+    body = "".join(rows) or '<tr><td colspan="4" class="ev">등록된 계약이 없습니다.</td></tr>'
+    return f"""<div class="vhead">
+  <div><h2>고객관리</h2>
+    <p>계약별 당사자 명부입니다. 당사자 지정은 계약생성 화면에서 합니다.</p>
+  </div>
+</div>
+<div class="tbl"><table>
+<thead><tr><th>계약</th><th>분류</th><th>당사자</th>
+<th style="text-align:right">인원</th></tr></thead>
+<tbody>{body}</tbody></table></div>"""
 
 
 def _roster(entry: ContractEntry) -> list[dict[str, str]]:

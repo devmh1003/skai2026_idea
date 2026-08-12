@@ -426,6 +426,7 @@ def _cmd_workspace(args, store: VersionStore) -> int:
             versions=records,
             timeline=build_timeline(store, contract_id),
         )
+        entry.texts = _load_version_texts(store, contract_id, records)
         for before, after in pairs:
             say(f"[{contract_id}] {before} → {after} 검토 중…")
             try:
@@ -467,6 +468,20 @@ def _cmd_workspace(args, store: VersionStore) -> int:
     for item in written:
         print(f"  → {item}")
     return 0
+
+
+def _load_version_texts(store: VersionStore, contract_id: str, records) -> dict:
+    """버전별 조문 원문 — 상세 화면에서 버전을 눌렀을 때 보여준다."""
+    from .parsing import load_document
+
+    texts: dict[str, list[tuple[str, str]]] = {}
+    for record in records:
+        try:
+            document = load_document(store.resolve(contract_id, record.version))
+        except (FileNotFoundError, ValueError, RuntimeError):
+            continue
+        texts[record.version] = [(c.heading, c.body) for c in document.clauses]
+    return texts
 
 
 def _write_workspace_csv(contracts: list[ContractEntry], out_dir: Path) -> list[Path]:

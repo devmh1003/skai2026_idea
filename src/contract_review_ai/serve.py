@@ -7,8 +7,9 @@
 
     GET  /                     워크스페이스 (요청 시 최신 상태로 재생성)
     POST /api/upload           계약서 업로드 → 버전 등록 → 워크스페이스 갱신
-    GET  /api/download         md / csv / json / html 즉석 생성해 내려받기
+    GET  /api/download         Word(.docx) 생성, PDF는 인쇄 화면으로
     GET  /api/export           계약대장·버전대장 CSV
+    GET  /api/template         표준 계약서 양식 Word 내려받기
 
 외부 패키지도, 인터넷도 쓰지 않는다. 사내망 PC에서 그대로 띄울 수 있다.
 """
@@ -28,15 +29,26 @@ from .config import Settings
 from .models import RiskLevel
 from .report import (
     ContractEntry,
+    render_contract_docx,
     render_contract_index_csv,
     render_csv,
+    render_docx,
     render_html,
     render_markdown,
     render_version_index_csv,
     render_workspace,
 )
 from .review import review_versions
+from .templates import find as find_template
+from .templates import read as read_template
 from .versioning import VersionStore, build_timeline
+
+UPLOAD_SUFFIXES = {".hwp", ".hwpx", ".docx", ".pdf"}
+"""업로드로 받는 형식 — 한글·워드·PDF.
+
+구형 .hwp는 olefile이 있어야 본문을 뽑을 수 있어, 등록 시점에 확인하고 막는다.
+나중에 검토 단계에서 조용히 실패하면 원인을 찾기 어렵다.
+"""
 
 _SAFE = re.compile(r"[^0-9A-Za-z가-힣._\- ]+")
 
@@ -77,6 +89,10 @@ def build_entries(config: ServerConfig, contract_ids: list[str] | None = None):
             versions=records,
             timeline=build_timeline(config.store, contract_id) if len(records) > 1 else [],
         )
+        entry.texts = _load_texts(config.store, contract_id, records)
+        add_parties, remove_parties = config.store.split_party_specs(
+            config.store.parties(contract_id)
+        )
         for before, after in version_pairs([r.version for r in records], config.pairs):
             try:
                 entry.results.append(
@@ -88,6 +104,8 @@ def build_entries(config: ServerConfig, contract_ids: list[str] | None = None):
                         settings=config.settings,
                         views=config.views,
                         min_level=config.min_level,
+                        add_parties=add_parties,
+                        remove_parties=remove_parties,
                         rule_files=config.rule_files,
                         disable_rules=config.disable_rules,
                         progress=None,
@@ -99,7 +117,24 @@ def build_entries(config: ServerConfig, contract_ids: list[str] | None = None):
     return entries
 
 
+def _load_texts(store: VersionStore, contract_id: str, records) -> dict:
+    """버전별 조문 원문. 파싱에 실패한 버전은 조용히 건너뛴다(비교는 계속 돌아야 한다)."""
+    from .parsing import load_document
+
+    texts: dict[str, list[tuple[str, str]]] = {}
+    for record in records:
+        try:
+            document = load_document(store.resolve(contract_id, record.version))
+        except (FileNotFoundError, ValueError, RuntimeError):
+            continue
+        texts[record.version] = [(c.heading, c.body) for c in document.clauses]
+    return texts
+
+
 def _result_for(config: ServerConfig, contract_id: str, before: str, after: str):
+    add_parties, remove_parties = config.store.split_party_specs(
+        config.store.parties(contract_id)
+    )
     return review_versions(
         contract_id,
         before,
@@ -108,6 +143,8 @@ def _result_for(config: ServerConfig, contract_id: str, before: str, after: str)
         settings=config.settings,
         views=config.views,
         min_level=config.min_level,
+        add_parties=add_parties,
+        remove_parties=remove_parties,
         rule_files=config.rule_files,
         disable_rules=config.disable_rules,
         progress=None,
@@ -182,6 +219,10 @@ class Handler(BaseHTTPRequestHandler):
             self._export(query)
             return
 
+        if parsed.path == "/api/template":
+            self._template(query)
+            return
+
         self._send(b"not found", "text/plain; charset=utf-8", status=404)
 
     def _download(self, query: dict[str, list[str]]) -> None:
@@ -194,6 +235,24 @@ class Handler(BaseHTTPRequestHandler):
             result = _result_for(self.config, contract_id, before, after)
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
             self._json({"ok": False, "error": str(exc)}, status=400)
+            return
+
+        name = _safe(f"{contract_id}_{result.before_doc.version}-{result.after_doc.version}")
+        if fmt == "docx":
+            self._send(
+                render_docx(result, contract_id),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                filename=f"{name}.docx",
+            )
+            return
+        if fmt == "pdf":
+            # 한글 PDF는 폰트 임베딩이 필요해 직접 만들지 않는다. 인쇄용 화면을 띄워
+            # 브라우저의 'PDF로 저장'을 쓰게 하는 편이 결과물도 정확하다.
+            page = render_html(result).replace(
+                "</body>", "<script>window.addEventListener('load',function(){window.print()});"
+                "</script></body>"
+            )
+            self._send(page.encode("utf-8"), "text/html; charset=utf-8")
             return
 
         renderers = {
@@ -211,11 +270,28 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         text, content_type, suffix = renderers[fmt]
-        name = _safe(f"{contract_id}_{result.before_doc.version}-{result.after_doc.version}")
         self._send(
             text.encode("utf-8"),
             content_type,
             filename=f"{name}.{suffix}",
+        )
+
+    def _template(self, query: dict[str, list[str]]) -> None:
+        """표준 계약서 양식을 Word로 내려준다."""
+        template = find_template(query.get("id", [""])[0])
+        if template is None:
+            self._json({"ok": False, "error": "양식을 찾을 수 없습니다."}, status=404)
+            return
+        try:
+            text = read_template(template)
+        except FileNotFoundError as exc:
+            self._json({"ok": False, "error": str(exc)}, status=404)
+            return
+
+        self._send(
+            render_contract_docx(template.title, text),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename=f"{_safe(template.title)}.docx",
         )
 
     def _export(self, query: dict[str, list[str]]) -> None:
@@ -289,6 +365,19 @@ class Handler(BaseHTTPRequestHandler):
         temp_dir = Path(tempfile.mkdtemp(prefix="clausa-upload-"))
         try:
             for index, (filename, payload) in enumerate(files):
+                suffix = Path(filename).suffix.lower()
+                if suffix not in UPLOAD_SUFFIXES:
+                    skipped.append(
+                        {
+                            "file": filename,
+                            "reason": "한글(.hwp/.hwpx), Word(.docx), PDF만 올릴 수 있습니다.",
+                        }
+                    )
+                    continue
+                reason = _missing_reader(suffix)
+                if reason:
+                    skipped.append({"file": filename, "reason": reason})
+                    continue
                 path = temp_dir / _safe(filename)
                 path.write_bytes(payload)
                 label = labels[index] if index < len(labels) and labels[index] else path.stem
@@ -306,6 +395,10 @@ class Handler(BaseHTTPRequestHandler):
                     skipped.append({"file": filename, "reason": str(exc)})
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+        specs = [s.strip() for s in (fields.get("parties") or "").split(",") if s.strip()]
+        if specs:
+            self.config.store.set_parties(contract_id, specs)
 
         self._json({"ok": bool(added), "added": added, "skipped": skipped})
 
@@ -332,6 +425,20 @@ class Handler(BaseHTTPRequestHandler):
             "application/json; charset=utf-8",
             status=status,
         )
+
+
+def _missing_reader(suffix: str) -> str:
+    """해당 형식을 읽는 데 필요한 선택 의존성이 빠져 있으면 사유를 돌려준다."""
+    required = {".hwp": "olefile", ".docx": "docx", ".pdf": "pypdf"}.get(suffix)
+    if not required:
+        return ""
+
+    import importlib.util
+
+    if importlib.util.find_spec(required) is not None:
+        return ""
+    package = {"docx": "python-docx"}.get(required, required)
+    return f"{suffix} 원본을 읽으려면 서버에 `pip install {package}` 가 필요합니다."
 
 
 def _safe(name: str) -> str:

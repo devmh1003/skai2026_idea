@@ -384,8 +384,8 @@ def test_render_workspace_views(tmp_path):
     assert page.count('class="result-panel"') == 1
 
 
-def test_workspace_exposes_party_editor(tmp_path):
-    """당사자 명부는 화면에서 수정·제외·추가할 수 있어야 한다."""
+def test_workspace_party_setup_lives_in_creation(tmp_path):
+    """당사자 지정은 계약생성 화면에서 하고, 고객관리에서 확인한다."""
     from contract_review_ai.report import ContractEntry, render_workspace
 
     before = tmp_path / "v1.txt"
@@ -395,9 +395,13 @@ def test_workspace_exposes_party_editor(tmp_path):
     result = review_contracts(before, after, backend=OfflineBackend(), progress=None)
 
     page = render_workspace([ContractEntry(contract_id="계약A", results=[result])])
-    assert 'data-party-manager="계약A"' in page
-    assert 'data-act="add"' in page
-    assert 'data-act="toggle"' in page
-    # 결과 패널의 당사자 열에도 식별자가 붙어야 편집이 반영된다.
-    assert 'data-party="갑"' in page
-    assert "data-party-label" in page
+    # 좌측 메뉴 4개
+    for view in ("dashboard", "contracts", "create", "customers"):
+        assert f'data-goto="{view}"' in page
+    # 계약생성 화면에 당사자 입력이 있고, 업로드는 Word/PDF만 받는다
+    assert 'data-up="parties"' in page
+    assert 'accept=".hwp,.hwpx,.docx,.pdf"' in page
+    # 고객관리에 당사자 명부가 나온다
+    assert "고객관리" in page
+    # 상세 화면의 당사자 편집기는 사라졌다
+    assert "data-party-manager" not in page
