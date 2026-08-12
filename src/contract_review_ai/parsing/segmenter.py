@@ -41,14 +41,17 @@ def segment_clauses(text: str) -> list[Clause]:
     if not text:
         return []
 
+    # `제N조`가 하나라도 잡히면 그것만으로 충분한 신호다. 각서·별지처럼 조문이
+    # 하나뿐인 문서를 문단 분할로 떨어뜨리면 제목이 통째로 뭉개진다.
     clauses = _segment_by_article(text)
-    if len(clauses) >= 2:
+    if clauses:
         return clauses
 
     clauses = _segment_by_inline_article(text)
-    if len(clauses) >= 2:
+    if clauses:
         return clauses
 
+    # 번호 목록은 신호가 약해 두 개 이상일 때만 인정한다.
     clauses = _segment_by_numbered_items(text)
     if len(clauses) >= 2:
         return clauses

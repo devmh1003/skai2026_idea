@@ -63,6 +63,12 @@ def test_segment_keeps_preamble():
     assert clauses[0].number == "전문"
 
 
+def test_segment_handles_single_article():
+    """조문이 하나뿐인 각서·별지도 조문으로 인식해야 한다."""
+    clauses = segment_clauses("제1조(목적)\n본 각서의 목적을 정한다.")
+    assert [(c.number, c.title) for c in clauses] == [("1", "목적")]
+
+
 def test_segment_falls_back_to_numbered_items():
     text = "1. 첫째 항목입니다.\n2. 둘째 항목입니다.\n3. 셋째 항목입니다."
     assert len(segment_clauses(text)) >= 3

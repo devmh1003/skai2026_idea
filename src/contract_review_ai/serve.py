@@ -486,6 +486,20 @@ class Handler(BaseHTTPRequestHandler):
         text = _compose(clauses)
         base = str(payload.get("base_version", "")).strip()
 
+        # 조문 일부만 보내면 나머지가 통째로 빠진 문서가 저장된다. 편집 화면은 늘
+        # 전체 조문을 보내므로, 개수가 줄었다는 건 잘못된 호출이라고 본다.
+        missing = _dropped_clauses(self.config.store, contract_id, base, len(clauses))
+        if missing:
+            self._json(
+                {
+                    "ok": False,
+                    "error": f"{base}는 조문이 {missing}개인데 {len(clauses)}개만 전달됐습니다. "
+                    "일부 조문이 사라질 수 있어 저장하지 않았습니다.",
+                },
+                status=400,
+            )
+            return
+
         # 아무것도 고치지 않고 저장하면 해시가 같아 중복으로 걸린다. 그 상황을
         # '중복 파일' 대신 '변경 없음'으로 알려 주는 편이 실제 상황에 맞다.
         if base:
@@ -544,6 +558,19 @@ class Handler(BaseHTTPRequestHandler):
             "application/json; charset=utf-8",
             status=status,
         )
+
+
+def _dropped_clauses(store: VersionStore, contract_id: str, base: str, sent: int) -> int:
+    """전달된 조문 수가 기준 버전보다 적으면 기준 버전의 조문 수를 돌려준다."""
+    if not base:
+        return 0
+    try:
+        from .parsing import load_document
+
+        total = len(load_document(store.resolve(contract_id, base)).clauses)
+    except (FileNotFoundError, ValueError, RuntimeError):
+        return 0
+    return total if sent < total else 0
 
 
 def _compose(clauses: list[dict]) -> str:

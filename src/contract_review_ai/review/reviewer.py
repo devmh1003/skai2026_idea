@@ -84,7 +84,7 @@ def review_contracts(
 
     targets = [c for c in changed if c.rule_level.rank >= min_level.rank]
     if len(targets) < len(changed):
-        say(f"위험도 {min_level.label} 이상 {len(targets)}건만 코멘트 생성")
+        say(f"탐지 등급 {min_level.label} 이상 {len(targets)}건만 코멘트 생성")
 
     view_parties = _resolve_views(views, parties)
     own_backend = backend is None

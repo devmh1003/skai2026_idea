@@ -395,7 +395,14 @@ def _toolbar(result: ReviewResult) -> str:
         ]
         return f'<div class="group">{"".join(out)}</div>'
 
-    party_options = [(p.id, f"{p.alias} 불리") for p in result.parties]
+    # 이 비교본에서 실제로 불리 판정이 난 당사자만 칩으로 남긴다.
+    adverse_ids = {
+        impact.party_id
+        for comp in result.changed()
+        for impact in comp.impacts
+        if impact.verdict == "adverse" and impact.mentioned
+    }
+    party_options = [(p.id, f"{p.alias} 불리") for p in result.parties if p.id in adverse_ids]
     category_options = [(c, c) for c in result.category_counts()][:12]
 
     return f"""<div class="toolbar">

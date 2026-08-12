@@ -105,7 +105,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--min-level",
         choices=list(_LEVELS),
         default="info",
-        help="이 위험도 이상인 변경 조문만 LLM 코멘트 생성 (기본: info = 전부)",
+        help="이 등급 이상 탐지된 조문만 코멘트 생성 (기본: info = 전부)",
     )
     review.add_argument(
         "--format",
@@ -153,7 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
     portal.add_argument("--party", default="", help="코멘트 관점 (약칭 콤마 구분 또는 all)")
     portal.add_argument(
         "--min-level", choices=list(_LEVELS), default="medium",
-        help="LLM 코멘트를 생성할 최소 위험도 (기본: medium — 계약 수가 많아 기본값이 높습니다)",
+        help="코멘트를 생성할 최소 탐지 등급 (기본: medium — 계약 수가 많아 기본값이 높습니다)",
     )
     portal.add_argument(
         "--pairs", choices=("adjacent", "all", "latest"), default="adjacent",
@@ -295,16 +295,14 @@ def _cmd_review(args, store: VersionStore) -> int:
         path.write_text(render_csv(result), encoding="utf-8")
         written.append(path)
 
-    risks = result.risk_counts()
-    print(
-        f"변경 {len(result.changed())}건 "
-        f"(높음 {risks['high']} / 중간 {risks['medium']} / 낮음 {risks['low']})"
-    )
+    flagged = sum(1 for c in result.changed() if c.flags)
+    issues = sum(len(c.flags) for c in result.changed())
+    print(f"변경 {len(result.changed())}건 · 검토 대상 {flagged}건 · 쟁점 신호 {issues}건")
     for path in written:
         print(f"  → {path}")
 
-    # 고위험 변경이 있으면 종료코드 1 — 승인 파이프라인의 게이트로 쓸 수 있게.
-    return 1 if risks["high"] else 0
+    # 검토가 필요한 조문이 있으면 종료코드 1 — 승인 파이프라인의 게이트로 쓸 수 있게.
+    return 1 if flagged else 0
 
 
 # ---------------------------------------------------------------- version
@@ -371,7 +369,7 @@ def _cmd_history(args, store: VersionStore) -> int:
         print(
             f"  {step.from_version} → {step.to_version}: "
             f"수정 {step.modified} · 신설 {step.added} · 삭제 {step.deleted} "
-            f"· 고위험 {step.high} · 중위험 {step.medium}"
+            f"· 쟁점 {step.flagged}"
         )
         if step.headings:
             print(f"      주요 변경: {', '.join(step.headings)}")
@@ -464,8 +462,8 @@ def _cmd_workspace(args, store: VersionStore) -> int:
         written += _write_workspace_csv(contracts, out_dir)
 
     total = sum(len(c.results) for c in contracts)
-    high = sum(c.high for c in contracts)
-    print(f"계약 {len(contracts)}건 · 비교본 {total}개 · 고위험 {high}건")
+    flagged = sum(c.flagged for c in contracts)
+    print(f"계약 {len(contracts)}건 · 비교본 {total}개 · 검토 대상 조문 {flagged}건")
     for item in written:
         print(f"  → {item}")
     return 0
