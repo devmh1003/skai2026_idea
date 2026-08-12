@@ -425,6 +425,7 @@ def _cmd_workspace(args, store: VersionStore) -> int:
             category=store.category(contract_id),
             versions=records,
             timeline=build_timeline(store, contract_id),
+            status_override=store.status(contract_id),
         )
         entry.texts = _load_version_texts(store, contract_id, records)
         for before, after in pairs:

@@ -18,13 +18,21 @@ from dataclasses import dataclass, field
 
 from .. import DISCLAIMER
 from ..models import ReviewResult, TimelineStep, VersionRecord
+from .checky import CSS as CHECKY_CSS
+from .checky import JS as CHECKY_JS
+from .checky import brand_markup, buddy_markup
 from .html import CSS as BASE_CSS
 from .html import JS as PANEL_JS
 from .html import render_result_panel
 
-BRAND = "CLAUSA"
+BRAND = "체키"
+
+STATUS_ORDER = ("started", "ongoing", "done")
+STATUS_LABEL = {"started": "개시", "ongoing": "진행중", "done": "완료"}
+STATUS_COLOR = {"started": "#7c8698", "ongoing": "#1849a9", "done": "#087443"}
+_FINAL_HINTS = ("최종", "날인", "서명", "확정", "체결")
 USER_NAME = "김민형"
-TAGLINE = "Contract Intelligence"
+TAGLINE = "계약 검토 도우미"
 
 _CSS = """
 /* ── 앱 셸 ────────────────────────────────────────── */
@@ -68,6 +76,46 @@ display:flex;align-items:center;justify-content:center;font-size:11px;font-weigh
 .vhead h2{font-size:20px;font-weight:600;margin:0;letter-spacing:-.02em}
 .vhead p{margin:2px 0 0;font-size:13px;color:var(--muted)}
 .vhead .right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+/* ── 진행 단계 보드 ────────────────────────────────── */
+.statboard{margin-bottom:18px}
+.statcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.statcard{position:relative;overflow:hidden;text-align:left;font:inherit;cursor:pointer;
+background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px 14px;
+box-shadow:var(--shadow);transition:transform .16s,box-shadow .16s,border-color .16s}
+.statcard:hover{transform:translateY(-2px);border-color:var(--sc);
+box-shadow:0 12px 28px rgba(16,24,40,.10)}
+.statcard::before{content:"";position:absolute;inset:0 0 auto;height:3px;background:var(--sc)}
+.statcard .dotmark{position:absolute;top:16px;right:16px;width:8px;height:8px;border-radius:50%;
+background:var(--sc);box-shadow:0 0 0 4px color-mix(in srgb,var(--sc) 18%,transparent)}
+.sc-k{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.04em}
+.sc-n{font-size:32px;font-weight:600;line-height:1.1;margin-top:6px;color:var(--sc);
+font-variant-numeric:tabular-nums}
+.sc-d{font-size:11.5px;color:var(--muted);margin-top:2px}
+.sc-bar{height:4px;border-radius:3px;background:#eef1f5;margin-top:12px;overflow:hidden}
+.sc-bar i{display:block;height:100%;border-radius:3px;background:var(--sc);
+animation:grow .8s cubic-bezier(.22,1,.36,1) both}
+.flowbar{display:flex;gap:3px;height:8px;margin-top:12px}
+.flowbar .seg{border-radius:4px;animation:fade .6s ease both}
+@keyframes fade{from{opacity:0}}
+
+.tracks{display:flex;flex-direction:column;gap:4px}
+.track{display:grid;grid-template-columns:210px 1fr 150px;gap:16px;align-items:center;
+padding:11px 10px;border-radius:8px;cursor:pointer;transition:background .14s}
+.track:hover{background:#f8fafc}
+@media(max-width:820px){.track{grid-template-columns:1fr}}
+.tk-name b{display:block;font-size:13.5px;font-weight:600}
+.tk-name .ev{display:block;font-size:11.5px;margin-top:1px}
+.tk-track{position:relative;height:8px;border-radius:5px;background:#eef1f5}
+.tk-fill{height:100%;border-radius:5px;animation:grow .8s cubic-bezier(.22,1,.36,1) both}
+.tk-dots{position:absolute;inset:0;display:flex;align-items:center;gap:0;
+justify-content:space-between;padding:0 2px}
+.vdot{width:6px;height:6px;border-radius:50%;background:#fff;
+box-shadow:0 0 0 1.5px rgba(16,24,40,.18)}
+.vdot.done{box-shadow:0 0 0 1.5px var(--ink)}
+.tk-meta{display:flex;align-items:center;gap:10px;justify-content:flex-end}
+.pill-status{font-size:11.5px;font-weight:600;color:var(--sc);background:
+color-mix(in srgb,var(--sc) 12%,transparent);padding:3px 10px;border-radius:999px}
 
 /* ── 지표 ─────────────────────────────────────────── */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;
@@ -138,6 +186,28 @@ transition:border-color .14s,box-shadow .14s}
 .tpl h4{margin:6px 0 4px;font-size:14.5px;font-weight:600}
 .tpl p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.6}
 .tpl button{align-self:flex-start;margin-top:auto}
+textarea{font:inherit;font-size:13.5px;width:100%;padding:10px 12px;border-radius:8px;
+border:1px solid var(--line-2);background:var(--surface);color:var(--ink);resize:vertical;
+margin-top:5px;line-height:1.7}
+textarea:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+select{font:inherit;font-size:13.5px;padding:8px 12px;border-radius:8px;
+border:1px solid var(--line-2);background:var(--surface);color:var(--ink);margin-top:5px}
+.mtstate{font-size:12.5px;color:var(--muted)}
+.mtstate.err{color:var(--high)}
+.mtstate.ok{color:var(--ok)}
+.proposals{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.prop{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.prop-head{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fbfbfc;
+border-bottom:1px solid var(--line)}
+.prop-head b{font-size:13.5px}
+.prop-head label{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12.5px;
+color:var(--muted);cursor:pointer}
+.prop-body{padding:12px 14px}
+.prop .basis{font-size:12.5px;color:var(--accent);background:var(--accent-soft);
+border-radius:6px;padding:8px 11px;margin-bottom:10px}
+.prop .cols2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:820px){.prop .cols2{grid-template-columns:1fr}}
+.prop .note{font-size:12px;color:var(--muted);margin-top:8px}
 .vrow{cursor:pointer}
 .vrow:hover{background:#f8fafc}
 .vrow[aria-expanded="true"]{background:var(--accent-soft)}
@@ -296,10 +366,11 @@ _APP_JS = r"""
     window.scrollTo(0, 0);
   }
 
-  function goDashboard(){ show('dashboard'); crumbs([{label:'현황관리'}]); }
-  function goContracts(){ show('contracts'); crumbs([{label:'계약상세'}]); }
-  function goCreate(){ show('create'); crumbs([{label:'계약생성'}]); }
-  function goCustomers(){ show('customers'); crumbs([{label:'고객관리'}]); }
+  function tell(view){ if (window.checkyView) window.checkyView(view); }
+  function goDashboard(){ show('dashboard'); crumbs([{label:'현황관리'}]); tell('dashboard'); }
+  function goContracts(){ show('contracts'); crumbs([{label:'계약상세'}]); tell('contracts'); }
+  function goCreate(){ show('create'); crumbs([{label:'계약생성'}]); tell('create'); }
+  function goCustomers(){ show('customers'); crumbs([{label:'고객관리'}]); tell('customers'); }
 
   function goDetail(id, title){
     document.querySelectorAll('[data-detail]').forEach(function(el){
@@ -307,6 +378,7 @@ _APP_JS = r"""
     });
     show('detail');
     crumbs([{label:'계약상세', go:goContracts}, {label:title}]);
+    tell('detail');
   }
 
   function goResult(key, contractId, contractTitle, label){
@@ -314,6 +386,7 @@ _APP_JS = r"""
       el.hidden = (el.dataset.result !== key);
     });
     show('result');
+    tell('result');
     crumbs([
       {label:'계약상세', go:goContracts},
       {label:contractTitle, go:function(){ goDetail(contractId, contractTitle); }},
@@ -345,16 +418,27 @@ _APP_JS = r"""
       if (settling()) return;
       goResult(row.dataset.resultOpen, row.dataset.contract, row.dataset.contractTitle,
                row.dataset.label);
+      var panel = document.querySelector('[data-result="' + row.dataset.resultOpen + '"]');
+      var flagged = panel ? panel.querySelectorAll('.clause[data-flagged="1"]').length : 0;
+      if (window.checky) {
+        if (flagged) {
+          window.checky.say('<b>' + flagged + '개 조항</b>을 짚어 뒀어요. 위에서부터 보시면 돼요.',
+                            'alert', 9000);
+        } else {
+          window.checky.say('걸리는 조항은 없었어요.', 'ok', 9000);
+        }
+      }
     });
   });
 
   // 계약 목록의 분류 필터 + 검색
   var rows = document.querySelectorAll('.js-contract-row');
-  var state = {cat:'all', q:''};
+  var state = {cat:'all', status:'all', q:''};
   function refresh(){
     var n = 0;
     rows.forEach(function(row){
       var ok = (state.cat === 'all' || row.dataset.category === state.cat)
+        && (state.status === 'all' || row.dataset.status === state.status)
         && (state.q === '' || (row.dataset.search||'').indexOf(state.q) >= 0);
       row.style.display = ok ? '' : 'none';
       if (ok) n++;
@@ -371,6 +455,29 @@ _APP_JS = r"""
       refresh();
     });
   });
+  document.querySelectorAll('.js-status').forEach(function(chip){
+    chip.addEventListener('click', function(){
+      document.querySelectorAll('.js-status').forEach(function(c){
+        c.setAttribute('aria-pressed', String(c === chip));
+      });
+      state.status = chip.dataset.value;
+      refresh();
+    });
+  });
+
+  // 현황 카드를 누르면 그 단계만 걸러 계약 목록으로 넘어간다.
+  document.querySelectorAll('[data-status-filter]').forEach(function(card){
+    card.addEventListener('click', function(){
+      var value = card.dataset.statusFilter;
+      document.querySelectorAll('.js-status').forEach(function(c){
+        c.setAttribute('aria-pressed', String(c.dataset.value === value));
+      });
+      state.status = value;
+      refresh();
+      goContracts();
+    });
+  });
+
   var search = document.querySelector('.js-contract-search');
   if (search) {
     search.addEventListener('input', function(){
@@ -470,6 +577,118 @@ _APP_JS = r"""
     });
   });
 
+  // 회의 반영 — 회의록을 조문 수정안으로 옮기고, 채택분만 새 버전으로 저장한다.
+  document.querySelectorAll('[data-meeting]').forEach(function(box){
+    var contractId = box.dataset.meeting;
+    var state = box.querySelector('[data-mtstate]');
+    var list = box.querySelector('[data-proposals]');
+    var btnApply = box.querySelector('[data-act="apply-meeting"]');
+    var clauses = null;
+
+    function get(name){ return box.querySelector('[data-mt="' + name + '"]').value.trim(); }
+    function say(kind, message){
+      state.className = 'mtstate ' + kind;
+      state.textContent = message;
+    }
+
+    box.querySelector('[data-act="analyze"]').addEventListener('click', function(){
+      var minutes = get('minutes');
+      if (!minutes) { say('err', '회의 내용을 입력하십시오.'); return; }
+      if (!live) {
+        say('err', '회의 반영은 서버 모드에서 동작합니다.');
+        return;
+      }
+      say('', '조문을 찾는 중…');
+      if (window.checky) window.checky.say('회의 내용을 조문에 맞춰 보고 있어요…', 'scanning', 20000);
+      list.innerHTML = '';
+      btnApply.hidden = true;
+
+      fetch('/api/meeting', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          contract_id: contractId, version: get('version'), minutes: minutes
+        })
+      }).then(function(r){ return r.json(); }).then(function(res){
+        if (!res.ok) { say('err', res.error || '분석에 실패했습니다.'); return; }
+        clauses = res.clauses;
+        if (!res.proposals.length) {
+          say('err', '회의 내용과 연결되는 조문을 찾지 못했습니다. 조 번호를 함께 적어 보십시오.');
+          return;
+        }
+        res.proposals.forEach(function(p){
+          var el = document.createElement('div');
+          el.className = 'prop';
+          el.dataset.heading = p.heading;
+          el.innerHTML =
+            '<div class="prop-head"><b></b>' +
+            '<span class="badge">' + (p.changed ? '수정 제안' : '검토 필요') + '</span>' +
+            '<label><input type="checkbox" data-adopt' + (p.changed ? ' checked' : '') +
+            '> 채택</label></div>' +
+            '<div class="prop-body"><div class="basis"></div>' +
+            '<div class="cols2"><div><span class="lbl">현재 문안</span>' +
+            '<textarea rows="5" readonly></textarea></div>' +
+            '<div><span class="lbl">수정안</span>' +
+            '<textarea rows="5" data-revised></textarea></div></div>' +
+            '<div class="note"></div></div>';
+          el.querySelector('b').textContent = p.heading;
+          el.querySelector('.basis').innerHTML = p.items.map(function(i){
+            var d = document.createElement('div');
+            d.textContent = '· ' + i;
+            return d.outerHTML;
+          }).join('');
+          el.querySelectorAll('textarea')[0].value = p.current;
+          el.querySelector('[data-revised]').value = p.proposed || p.current;
+          el.querySelector('.note').textContent =
+            (p.note || '') + (p.source ? '  (' + p.source + ')' : '');
+          list.appendChild(el);
+        });
+        var extra = res.unmatched.length
+          ? ' · 연결하지 못한 항목 ' + res.unmatched.length + '건' : '';
+        say('ok', res.proposals.length + '개 조문에 반영안을 만들었습니다.' + extra);
+        if (window.checky) {
+          window.checky.say('<b>' + res.proposals.length + '개 조문</b>에 반영안을 만들었어요.'
+            + (res.unmatched.length ? ' ' + res.unmatched.length + '건은 조문을 못 찾았어요.' : ''),
+            res.unmatched.length ? 'alert' : 'ok', 12000);
+        }
+        btnApply.hidden = false;
+      }).catch(function(err){ say('err', String(err)); });
+    });
+
+    btnApply.addEventListener('click', function(){
+      if (!clauses) return;
+      var adopted = {};
+      list.querySelectorAll('.prop').forEach(function(el){
+        if (el.querySelector('[data-adopt]').checked) {
+          adopted[el.dataset.heading] = el.querySelector('[data-revised]').value.trim();
+        }
+      });
+      if (!Object.keys(adopted).length) { say('err', '채택할 조문을 선택하십시오.'); return; }
+
+      var merged = clauses.map(function(c){
+        var body = adopted[c.heading] !== undefined ? adopted[c.heading] : c.body;
+        return {heading: c.heading, body: body};
+      });
+      say('', '저장 중…');
+      if (window.checky) window.checky.say('새 버전으로 저장하고 있어요…', 'scanning', 20000);
+      fetch('/api/edit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          contract_id: contractId,
+          base_version: get('version'),
+          label: get('label') || '회의 반영본',
+          note: '회의 반영 · ' + Object.keys(adopted).length + '개 조문',
+          clauses: merged
+        })
+      }).then(function(r){ return r.json(); }).then(function(res){
+        if (!res.ok) { say('err', res.error || '저장에 실패했습니다.'); return; }
+        say('ok', res.version + ' ' + res.label + ' 으로 저장했습니다. 검토를 다시 계산합니다…');
+        setTimeout(function(){ location.reload(); }, 700);
+      }).catch(function(err){ say('err', String(err)); });
+    });
+  });
+
   // ── 업로드 / 내려받기 ─────────────────────────────
   var live = location.protocol === 'http:' || location.protocol === 'https:';
 
@@ -559,12 +778,14 @@ _APP_JS = r"""
       Array.prototype.forEach.call(input.files, function(f){ form.append('files', f); });
 
       say('', '업로드 중…');
+      if (window.checky) window.checky.say('파일을 읽고 있어요…', 'scanning', 20000);
       fetch('/api/upload', {method:'POST', body: form})
         .then(function(r){ return r.json(); })
         .then(function(res){
           if (!res.ok) { say('err', res.error || '업로드에 실패했습니다.'); return; }
           var added = res.added.map(function(a){ return a.version + ' ' + a.label; }).join(', ');
           say('ok', added + ' 등록됨. 검토를 다시 계산합니다…');
+          if (window.checky) window.checky.say(added + ' 등록했어요. 바로 검토할게요!', 'ok', 9000);
           setTimeout(function(){ location.reload(); }, 700);
         })
         .catch(function(err){ say('err', String(err)); });
@@ -607,6 +828,33 @@ class ContractEntry:
     def high(self) -> int:
         return self.flagged
 
+    status_override: str = ""
+    """수동 지정 상태(started/ongoing/done). 비어 있으면 버전 이력에서 추론한다."""
+
+    @property
+    def status(self) -> str:
+        """개시 → 진행중 → 완료.
+
+        초안만 올라온 계약은 '개시', 상대방과 주고받는 중이면 '진행중',
+        마지막 버전 라벨이 최종본·날인본이면 '완료'로 본다. 라벨만으로 판단이
+        어려운 계약은 manifest의 status로 직접 지정할 수 있다.
+        """
+        if self.status_override in STATUS_ORDER:
+            return self.status_override
+        if len(self.versions) <= 1:
+            return "started"
+        label = self.versions[-1].label
+        return "done" if any(hint in label for hint in _FINAL_HINTS) else "ongoing"
+
+    @property
+    def status_label(self) -> str:
+        return STATUS_LABEL[self.status]
+
+    @property
+    def rounds(self) -> int:
+        """협상 왕복 횟수 = 버전 수 - 1."""
+        return max(len(self.versions) - 1, 0)
+
     @property
     def latest(self) -> str:
         return self.versions[-1].version if self.versions else "-"
@@ -633,12 +881,12 @@ def render_workspace(entries: list[ContractEntry]) -> str:
 <html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{BRAND} · {TAGLINE}</title>
-<style>{BASE_CSS}{_CSS}</style></head>
+<style>{BASE_CSS}{_CSS}{CHECKY_CSS}</style></head>
 <body>
 <div class="app">
 <aside class="side">
   <div class="brand">
-    <div class="mark">CA</div>
+    {brand_markup()}
     <div>
       <div class="name">{BRAND}</div>
       <div class="tag">{TAGLINE}</div>
@@ -690,7 +938,9 @@ def render_workspace(entries: list[ContractEntry]) -> str:
   <div class="disclaimer">{_e(DISCLAIMER)}</div>
 </div>
 </div></div>
+{buddy_markup()}
 <script>{PANEL_JS}</script>
+<script>{CHECKY_JS}</script>
 <script>{_APP_JS}</script>
 </body></html>"""
 
@@ -740,12 +990,13 @@ def _dashboard(entries, total_versions: int, total_high: int, total_changes: int
     ) or '<div class="ev">기록된 개정 활동이 없습니다.</div>'
 
     return f"""<div class="vhead">
-  <div><h2>대시보드</h2><p>계약 포트폴리오와 최근 개정 활동을 한눈에 확인합니다.</p></div>
+  <div><h2>현황관리</h2><p>계약 진행 단계와 최근 개정 활동을 한눈에 확인합니다.</p></div>
   <div class="right">
     <button class="mini" data-export="contracts">계약대장</button>
     <button class="mini" data-export="versions">버전대장</button>
   </div>
 </div>
+{_status_board(entries)}
 <div class="kpis">{kpi_html}</div>
 <div class="panels">
   <div class="card"><h2>최근 개정 활동</h2><div class="feed">{feed}</div></div>
@@ -756,7 +1007,85 @@ def _dashboard(entries, total_versions: int, total_high: int, total_changes: int
 # ---------------------------------------------------------------- 계약 목록
 
 
+def _status_board(entries: list[ContractEntry]) -> str:
+    """계약 진행 단계 현황.
+
+    법무팀이 아침에 가장 먼저 보는 것은 "지금 몇 건이 협상 중이고, 몇 건이 닫혔나"다.
+    단계별 건수와 함께 계약별 진행 막대를 붙여, 어디서 오래 머물러 있는지 보이게 한다.
+    """
+    if not entries:
+        return '<div class="card"><div class="empty">등록된 계약이 없습니다.</div></div>'
+
+    buckets = {key: [e for e in entries if e.status == key] for key in STATUS_ORDER}
+    total = len(entries)
+
+    cards = "".join(
+        f'<button class="statcard" data-status-filter="{key}" '
+        f'style="--sc:{STATUS_COLOR[key]}">'
+        f'<span class="dotmark"></span>'
+        f'<div class="sc-k">{STATUS_LABEL[key]}</div>'
+        f'<div class="sc-n">{len(rows)}</div>'
+        f'<div class="sc-d">전체의 {round(100 * len(rows) / total)}%</div>'
+        f'<div class="sc-bar"><i style="width:{round(100 * len(rows) / total)}%"></i></div>'
+        "</button>"
+        for key, rows in buckets.items()
+    )
+
+    flow = "".join(
+        f'<div class="seg" style="flex:{max(len(rows), 0.001)};background:{STATUS_COLOR[key]}" '
+        f'title="{STATUS_LABEL[key]} {len(rows)}건"></div>'
+        for key, rows in buckets.items()
+        if rows
+    )
+
+    # 진행중 계약을 오래된 순으로 — 멈춰 있는 협상이 위로 온다.
+    watch = sorted(
+        (e for e in entries if e.status != "done"),
+        key=lambda e: (e.status == "started", e.updated_at),
+    )[:6]
+    rows = "".join(
+        f'<div class="track" data-open="{_e(e.contract_id)}" data-title="{_e(e.label)}">'
+        f'<div class="tk-name"><b>{_e(e.label)}</b>'
+        f'<span class="ev">{_e(e.category)} · {e.rounds}회 왕복</span></div>'
+        f"{_progress(e)}"
+        f'<div class="tk-meta"><span class="pill-status" style="--sc:{STATUS_COLOR[e.status]}">'
+        f"{_e(e.status_label)}</span>"
+        f'<span class="ev">{_e(e.updated_at[:10])}</span></div></div>'
+        for e in watch
+    ) or '<div class="ev">진행 중인 계약이 없습니다.</div>'
+
+    return f"""<div class="statboard">
+  <div class="statcards">{cards}</div>
+  <div class="flowbar">{flow}</div>
+</div>
+<div class="card" style="margin-bottom:20px">
+  <h2>진행 중인 계약</h2>
+  <div class="tracks">{rows}</div>
+</div>"""
+
+
+def _progress(entry: ContractEntry) -> str:
+    """버전 진행 막대. 점 하나가 버전 하나."""
+    total = max(len(entry.versions), 1)
+    dots = "".join(
+        f'<span class="vdot{" done" if index == total - 1 else ""}" '
+        f'title="{_e(record.version)} {_e(record.label)}"></span>'
+        for index, record in enumerate(entry.versions)
+    )
+    ratio = 100 if entry.status == "done" else min(round(100 * entry.rounds / 6), 92)
+    return (
+        f'<div class="tk-track"><div class="tk-fill" '
+        f'style="width:{ratio}%;background:{STATUS_COLOR[entry.status]}"></div>'
+        f'<div class="tk-dots">{dots}</div></div>'
+    )
+
+
 def _contracts_view(entries, categories: list[str]) -> str:
+    status_chips = "".join(
+        f'<button class="chip js-status" data-value="{key}" aria-pressed="false">'
+        f"{STATUS_LABEL[key]}</button>"
+        for key in STATUS_ORDER
+    )
     chips = '<button class="chip js-cat" data-value="all" aria-pressed="true">전체</button>'
     chips += "".join(
         f'<button class="chip js-cat" data-value="{_e(c)}" aria-pressed="false">{_e(c)}</button>'
@@ -766,12 +1095,15 @@ def _contracts_view(entries, categories: list[str]) -> str:
     rows = "".join(
         f'<tr class="js-contract-row" data-open="{_e(e.contract_id)}" '
         f'data-title="{_e(e.label)}" data-category="{_e(e.category)}" '
+        f'data-status="{_e(e.status)}" '
         f'data-search="{_e((e.label + " " + e.contract_id + " " + e.category).lower())}">'
         f'<td><div class="name">{_e(e.label)}</div>'
         f'<div class="sub">{_e(e.contract_id)}'
         + (f" · 당사자 {' / '.join(_e(p) for p in e.parties)}" if e.parties else "")
         + "</div></td>"
         f'<td><span class="badge cat">{_e(e.category)}</span></td>'
+        f'<td><span class="pill-status" style="--sc:{STATUS_COLOR[e.status]}">'
+        f"{_e(e.status_label)}</span></td>"
         f'<td class="num">{len(e.versions)}</td>'
         f'<td><span class="badge latest">{_e(e.latest)}</span></td>'
         f'<td class="num">'
@@ -779,7 +1111,7 @@ def _contracts_view(entries, categories: list[str]) -> str:
         + "</td>"
         f'<td class="mono">{_e(e.updated_at[:16])}</td></tr>'
         for e in entries
-    ) or '<tr><td colspan="6" class="ev">등록된 계약이 없습니다.</td></tr>'
+    ) or '<tr><td colspan="7" class="ev">등록된 계약이 없습니다.</td></tr>'
 
     return f"""<div class="vhead">
   <div><h2>계약</h2>
@@ -791,9 +1123,13 @@ def _contracts_view(entries, categories: list[str]) -> str:
       border:1px solid var(--line-2);background:var(--surface);min-width:220px">
   </div>
 </div>
-<div class="filters" style="margin-bottom:14px">{chips}</div>
+<div class="filters" style="margin-bottom:10px">{chips}</div>
+<div class="filters" style="margin-bottom:14px">
+  <button class="chip js-status" data-value="all" aria-pressed="true">진행 전체</button>
+  {status_chips}
+</div>
 <div class="tbl"><table>
-<thead><tr><th>계약</th><th>분류</th><th style="text-align:right">버전</th><th>최신</th>
+<thead><tr><th>계약</th><th>분류</th><th>진행</th><th style="text-align:right">버전</th><th>최신</th>
 <th style="text-align:right">쟁점</th><th>최종 등록</th></tr></thead>
 <tbody>{rows}</tbody></table></div>"""
 
@@ -887,6 +1223,8 @@ def _detail_view(entry: ContractEntry, index: int) -> str:
   {_version_docs(entry)}
 </div>
 
+{_meeting_panel(entry)}
+
 <div class="detail-grid">
   <div class="card"><h2>개정 타임라인</h2><div class="feed">{steps}</div></div>
   <div class="card"><h2>검토 요약</h2>{_detail_summary(entry)}</div>
@@ -936,6 +1274,47 @@ def _uploader(entry: ContractEntry | None = None) -> str:
       <button class="mini primary" data-act="upload" style="align-self:flex-end">등록하기</button>
     </div>
     <div class="upstate" data-upstate></div>
+  </div>
+</div>"""
+
+
+def _meeting_panel(entry: ContractEntry) -> str:
+    """회의 합의 사항을 조문 수정안으로 옮기는 패널.
+
+    회의록을 붙여 넣으면 어느 조문에 걸리는지 찾아 수정 문안을 제안하고,
+    채택한 것만 모아 다음 버전으로 저장한다.
+    """
+    options = "".join(
+        f'<option value="{_e(r.version)}">{_e(r.version)} {_e(r.label)}</option>'
+        for r in reversed(entry.versions)
+    )
+    placeholder = (
+        "- 3조 대금 지급기일을 45일로 단축하기로 함&#10;"
+        "- 손해배상 한도는 계약금액 100%로 하되 고의·중과실은 제외&#10;"
+        "- 준거법은 대한민국 법으로 환원"
+    )
+    return f"""<div class="sec" data-meeting="{_e(entry.contract_id)}">
+  <h3>회의 반영</h3>
+  <p class="hint">협상 회의에서 합의된 내용을 붙여 넣으면 해당 조문을 찾아 수정 문안을 제안합니다.
+  채택한 조문만 모아 새 버전으로 저장합니다.</p>
+  <div class="card">
+    <div class="frow">
+      <label style="flex:0 0 220px">기준 버전
+        <select data-mt="version">{options}</select>
+      </label>
+      <label style="flex:1 1 260px">회의 정보
+        <input data-mt="label" placeholder="예: 2026-08-12 3차 협상 회의 반영">
+      </label>
+    </div>
+    <label style="display:block;font-size:12px;font-weight:600;color:var(--muted)">회의 내용
+      <textarea data-mt="minutes" rows="5" placeholder="{placeholder}"></textarea>
+    </label>
+    <div class="frow" style="margin:12px 0 0;align-items:center">
+      <button class="mini primary" data-act="analyze">조문 수정안 만들기</button>
+      <button class="mini" data-act="apply-meeting" hidden>채택본 저장</button>
+      <span class="mtstate" data-mtstate></span>
+    </div>
+    <div class="proposals" data-proposals></div>
   </div>
 </div>"""
 

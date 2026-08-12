@@ -8,6 +8,7 @@
     GET  /                     워크스페이스 (요청 시 최신 상태로 재생성)
     POST /api/upload           계약서 업로드 → 버전 등록 → 워크스페이스 갱신
     POST /api/edit             조문 편집 결과를 새 버전으로 저장
+    POST /api/meeting          회의록 → 조문별 수정 제안
     GET  /api/download         Word(.docx) 생성, PDF는 인쇄 화면으로
     GET  /api/export           계약대장·버전대장 CSV
     GET  /api/template         표준 계약서 양식 Word 내려받기
@@ -27,6 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .config import Settings
+from .meeting import build_proposals
 from .models import RiskLevel
 from .report import (
     ContractEntry,
@@ -89,6 +91,7 @@ def build_entries(config: ServerConfig, contract_ids: list[str] | None = None):
             category=config.store.category(contract_id),
             versions=records,
             timeline=build_timeline(config.store, contract_id) if len(records) > 1 else [],
+            status_override=config.store.status(contract_id),
         )
         entry.texts = _load_texts(config.store, contract_id, records)
         add_parties, remove_parties = config.store.split_party_specs(
@@ -340,6 +343,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urllib.parse.urlparse(self.path).path
+        if path == "/api/meeting":
+            self._meeting()
+            return
         if path == "/api/edit":
             self._edit()
             return
@@ -407,6 +413,57 @@ class Handler(BaseHTTPRequestHandler):
 
         self._json({"ok": bool(added), "added": added, "skipped": skipped})
 
+    def _meeting(self) -> None:
+        """회의록을 받아 조문별 수정 제안을 돌려준다."""
+        length = int(self.headers.get("Content-Length", "0"))
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            self._json({"ok": False, "error": f"요청을 읽을 수 없습니다: {exc}"}, status=400)
+            return
+
+        contract_id = str(payload.get("contract_id", "")).strip()
+        version = str(payload.get("version", "latest")).strip() or "latest"
+        minutes = str(payload.get("minutes", "")).strip()
+        if not contract_id or not minutes:
+            self._json({"ok": False, "error": "계약과 회의 내용이 필요합니다."}, status=400)
+            return
+
+        from .llm.factory import create_backend
+        from .parsing import load_document
+
+        try:
+            document = load_document(self.config.store.resolve(contract_id, version))
+        except (FileNotFoundError, ValueError, RuntimeError) as exc:
+            self._json({"ok": False, "error": str(exc)}, status=400)
+            return
+
+        backend = create_backend(self.config.settings)
+        proposals, items = build_proposals(document.clauses, minutes, backend)
+
+        self._json(
+            {
+                "ok": True,
+                "version": version,
+                "unmatched": [i.text for i in items if i.clause_index is None],
+                "clauses": [
+                    {"heading": c.heading, "body": c.body} for c in document.clauses
+                ],
+                "proposals": [
+                    {
+                        "heading": p.heading,
+                        "current": p.current,
+                        "proposed": p.proposed,
+                        "items": p.items,
+                        "note": p.note,
+                        "source": p.source,
+                        "changed": p.changed,
+                    }
+                    for p in proposals
+                ],
+            }
+        )
+
     def _edit(self) -> None:
         """조문 편집 결과를 새 버전으로 저장한다.
 
@@ -428,6 +485,22 @@ class Handler(BaseHTTPRequestHandler):
 
         text = _compose(clauses)
         base = str(payload.get("base_version", "")).strip()
+
+        # 아무것도 고치지 않고 저장하면 해시가 같아 중복으로 걸린다. 그 상황을
+        # '중복 파일' 대신 '변경 없음'으로 알려 주는 편이 실제 상황에 맞다.
+        if base:
+            try:
+                current = self.config.store.resolve(contract_id, base).read_text(
+                    encoding="utf-8"
+                )
+            except (FileNotFoundError, OSError, UnicodeDecodeError):
+                current = ""
+            if current and "".join(current.split()) == "".join(text.split()):
+                self._json(
+                    {"ok": False, "error": f"{base}에서 바뀐 내용이 없어 새 버전을 만들지 않았습니다."},
+                    status=400,
+                )
+                return
         label = str(payload.get("label", "")).strip() or f"{base} 편집본"
 
         temp_dir = Path(tempfile.mkdtemp(prefix="clausa-edit-"))

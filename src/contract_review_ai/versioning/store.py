@@ -81,6 +81,19 @@ class VersionStore:
     def title(self, contract_id: str) -> str:
         return self.load(contract_id).get("title", "") or contract_id
 
+    def status(self, contract_id: str) -> str:
+        """수동으로 지정한 진행 상태. 비어 있으면 버전 이력에서 추론한다."""
+        return self.load(contract_id).get("status", "")
+
+    def set_status(self, contract_id: str, status: str) -> None:
+        manifest = self.load(contract_id)
+        manifest["contract_id"] = contract_id
+        manifest["status"] = status.strip()
+        manifest.setdefault("versions", [])
+        path = self.manifest_path(contract_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
     def parties(self, contract_id: str) -> list[str]:
         """계약 등록 시 지정한 당사자 표기.
 
@@ -133,6 +146,7 @@ class VersionStore:
         manifest["title"] = title or manifest.get("title") or contract_id
         manifest["category"] = category or manifest.get("category") or ""
         manifest.setdefault("parties", [])
+        manifest.setdefault("status", "")
 
         records = [VersionRecord(**v) for v in manifest.get("versions", [])]
         digest = _sha256(source)
