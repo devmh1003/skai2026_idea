@@ -172,6 +172,16 @@ def test_detect_parties_handles_three_parties():
     assert [p.id for p in detect_parties(text)] == ["갑", "을", "병"]
 
 
+def test_detect_parties_ignores_lookalike_words():
+    """`정의)`의 '정', `3기 이상`의 '기'처럼 낱말 일부를 당사자로 잡으면 안 된다."""
+    text = (
+        'A사(이하 "갑"이라 한다)와 B사(이하 "을"이라 한다)는 다음과 같이 정한다.\n'
+        "제1조(비밀정보의 정의)\n갑과 을은 정의를 공유한다.\n"
+        "제2조(해지)\n을이 차임을 3기 이상 연체한 경우 갑은 해지할 수 있다."
+    )
+    assert [p.id for p in detect_parties(text)] == ["갑", "을"]
+
+
 def test_parse_party_spec():
     from contract_review_ai.parties import parse_party_spec
 

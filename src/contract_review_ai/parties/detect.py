@@ -55,13 +55,12 @@ def detect_parties(text: str) -> list[Party]:
         )
 
     for alias in _DEFAULT_ALIASES:
-        if alias in seen:
+        if alias in seen or not _looks_like_party(text, alias):
             continue
-        if re.search(rf"(?<![가-힣]){re.escape(alias)}(?=[은는이가을를에의와과도만]|\s|,|\.)", text):
-            seen.add(alias)
-            parties.append(
-                Party(id=alias, alias=alias, name="", role=_DEFAULT_ROLES.get(alias, ""))
-            )
+        seen.add(alias)
+        parties.append(
+            Party(id=alias, alias=alias, name="", role=_DEFAULT_ROLES.get(alias, ""))
+        )
 
     parties.sort(key=lambda p: _order(p.alias))
     return parties
@@ -131,6 +130,20 @@ def apply_overrides(
         existing.role = party.role or existing.role
 
     return sorted(result, key=lambda p: _order(p.alias))
+
+
+def _looks_like_party(text: str, alias: str) -> bool:
+    """정의 문언이 없을 때 갑·을·병… 을 당사자로 볼지 판단한다.
+
+    한 글자 약칭은 다른 낱말에 쉽게 걸린다 — `정의)`의 '정', `3기 이상`의 '기'.
+    실제 당사자는 (1) 문서에 여러 번 나오고 (2) 최소 한 번은 주어로 등장한다.
+    두 조건을 모두 만족할 때만 인정한다.
+    """
+    escaped = re.escape(alias)
+    mentions = re.findall(rf"(?<![가-힣]){escaped}(?=[은는이가을를에의와과도만]|\s|,|\.)", text)
+    if len(mentions) < 2:
+        return False
+    return bool(re.search(rf"(?<![가-힣]){escaped}(?=[은는이가])", text))
 
 
 def _name_before(text: str, position: int) -> str:
