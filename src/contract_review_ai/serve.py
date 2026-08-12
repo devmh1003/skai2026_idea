@@ -56,6 +56,32 @@ UPLOAD_SUFFIXES = {".hwp", ".hwpx", ".docx", ".pdf"}
 _SAFE = re.compile(r"[^0-9A-Za-z가-힣._\- ]+")
 
 
+_CACHE: dict[tuple, object] = {}
+"""검토 결과 캐시.
+
+계약이 늘수록 페이지를 열 때마다 모든 비교본을 다시 계산하느라 응답이 느려진다.
+버전 파일은 해시로 고정돼 있으므로, (계약, 두 버전의 해시, 코멘트 설정)이 같으면
+결과도 같다 — 그대로 재사용한다. 업로드·편집으로 새 버전이 생기면 키가 달라져
+자연히 무효화된다.
+"""
+
+
+def cache_key(config: ServerConfig, contract_id: str, before: str, after: str) -> tuple:
+    records = {r.version: r.sha256 for r in config.store.versions(contract_id)}
+    return (
+        contract_id,
+        records.get(before, before),
+        records.get(after, after),
+        tuple(config.views),
+        config.min_level,
+        config.settings.backend,
+        config.settings.model,
+        tuple(config.rule_files or ()),
+        tuple(config.disable_rules or ()),
+        tuple(config.store.parties(contract_id)),
+    )
+
+
 @dataclass
 class ServerConfig:
     store: VersionStore
@@ -94,29 +120,35 @@ def build_entries(config: ServerConfig, contract_ids: list[str] | None = None):
             status_override=config.store.status(contract_id),
         )
         entry.texts = _load_texts(config.store, contract_id, records)
+        entry.deadline = _load_deadline(config.store, contract_id, records)
         add_parties, remove_parties = config.store.split_party_specs(
             config.store.parties(contract_id)
         )
         for before, after in version_pairs([r.version for r in records], config.pairs):
+            key = cache_key(config, contract_id, before, after)
+            cached = _CACHE.get(key)
+            if cached is not None:
+                entry.results.append(cached)
+                continue
             try:
-                entry.results.append(
-                    review_versions(
-                        contract_id,
-                        before,
-                        after,
-                        store=config.store,
-                        settings=config.settings,
-                        views=config.views,
-                        min_level=config.min_level,
-                        add_parties=add_parties,
-                        remove_parties=remove_parties,
-                        rule_files=config.rule_files,
-                        disable_rules=config.disable_rules,
-                        progress=None,
-                    )
+                result = review_versions(
+                    contract_id,
+                    before,
+                    after,
+                    store=config.store,
+                    settings=config.settings,
+                    views=config.views,
+                    min_level=config.min_level,
+                    add_parties=add_parties,
+                    remove_parties=remove_parties,
+                    rule_files=config.rule_files,
+                    disable_rules=config.disable_rules,
+                    progress=None,
                 )
             except (FileNotFoundError, ValueError, RuntimeError):
                 continue
+            _CACHE[key] = result
+            entry.results.append(result)
         entries.append(entry)
     return entries
 
@@ -135,11 +167,30 @@ def _load_texts(store: VersionStore, contract_id: str, records) -> dict:
     return texts
 
 
+def _load_deadline(store: VersionStore, contract_id: str, records):
+    """최신 버전에서 계약 기한을 읽는다."""
+    from .deadlines import Deadline, extract
+    from .parsing import load_document
+
+    if not records:
+        return Deadline()
+    try:
+        document = load_document(store.resolve(contract_id, records[-1].version))
+    except (FileNotFoundError, ValueError, RuntimeError):
+        return Deadline()
+    return extract(document.clauses)
+
+
 def _result_for(config: ServerConfig, contract_id: str, before: str, after: str):
+    key = cache_key(config, contract_id, before, after)
+    cached = _CACHE.get(key)
+    if cached is not None:
+        return cached
+
     add_parties, remove_parties = config.store.split_party_specs(
         config.store.parties(contract_id)
     )
-    return review_versions(
+    result = review_versions(
         contract_id,
         before,
         after,
@@ -153,6 +204,8 @@ def _result_for(config: ServerConfig, contract_id: str, before: str, after: str)
         disable_rules=config.disable_rules,
         progress=None,
     )
+    _CACHE[key] = result
+    return result
 
 
 def _parse_multipart(body: bytes, boundary: bytes) -> tuple[dict[str, str], list[tuple[str, bytes]]]:

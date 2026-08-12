@@ -236,6 +236,36 @@ def test_impact_marks_adverse_party(docs):
     assert impacts["을"].verdict == "adverse"
 
 
+# ---------------------------------------------------------------- 기한
+
+
+def test_deadline_reads_term_and_notice():
+    from datetime import date
+
+    from contract_review_ai.deadlines import extract
+
+    clauses = segment_clauses(
+        "제2조(계약기간)\n"
+        "본 계약의 기간은 2026년 1월 1일부터 2026년 12월 31일까지로 한다.\n"
+        "만료 1개월 전까지 통지하지 아니하면 자동으로 갱신된다."
+    )
+    deadline = extract(clauses)
+    assert deadline.ends_on == date(2026, 12, 31)
+    assert deadline.notify_by == date(2026, 12, 1)
+    assert deadline.auto_renew is True
+    assert deadline.source == "제2조(계약기간)"
+
+
+def test_deadline_stays_empty_without_dates():
+    """'체결일부터 2년'처럼 기산점이 문서 밖이면 값을 지어내지 않는다."""
+    from contract_review_ai.deadlines import extract
+
+    clauses = segment_clauses("제9조(계약기간)\n본 계약의 기간은 체결일부터 2년으로 한다.")
+    deadline = extract(clauses)
+    assert deadline.known is False
+    assert deadline.urgency() == "unknown"
+
+
 # ---------------------------------------------------------------- HWPX
 
 
@@ -382,7 +412,7 @@ def test_render_workspace_views(tmp_path):
     )
     page = render_workspace([entry])
 
-    for view in ("dashboard", "contracts", "detail", "result"):
+    for view in ("dashboard", "contracts", "detail", "result", "search"):
         assert f'data-app-view="{view}"' in page
     assert "물류 위탁계약" in page
     assert "용역·도급" in page

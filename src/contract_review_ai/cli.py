@@ -426,6 +426,7 @@ def _cmd_workspace(args, store: VersionStore) -> int:
             status_override=store.status(contract_id),
         )
         entry.texts = _load_version_texts(store, contract_id, records)
+        entry.deadline = _load_deadline(store, contract_id, records)
         for before, after in pairs:
             say(f"[{contract_id}] {before} → {after} 검토 중…")
             try:
@@ -481,6 +482,20 @@ def _load_version_texts(store: VersionStore, contract_id: str, records) -> dict:
             continue
         texts[record.version] = [(c.heading, c.body) for c in document.clauses]
     return texts
+
+
+def _load_deadline(store: VersionStore, contract_id: str, records):
+    """최신 버전 조문에서 계약 기한을 읽는다."""
+    from .deadlines import Deadline, extract
+    from .parsing import load_document
+
+    if not records:
+        return Deadline()
+    try:
+        document = load_document(store.resolve(contract_id, records[-1].version))
+    except (FileNotFoundError, ValueError, RuntimeError):
+        return Deadline()
+    return extract(document.clauses)
 
 
 def _write_workspace_csv(contracts: list[ContractEntry], out_dir: Path) -> list[Path]:

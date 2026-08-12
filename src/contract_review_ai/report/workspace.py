@@ -17,6 +17,7 @@ import html as _html
 from dataclasses import dataclass, field
 
 from .. import DISCLAIMER
+from ..deadlines import Deadline
 from ..models import ReviewResult, TimelineStep, VersionRecord
 from .checky import CSS as CHECKY_CSS
 from .checky import JS as CHECKY_JS
@@ -208,6 +209,28 @@ border-radius:6px;padding:8px 11px;margin-bottom:10px}
 .prop .cols2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:820px){.prop .cols2{grid-template-columns:1fr}}
 .prop .note{font-size:12px;color:var(--muted);margin-top:8px}
+.dl-list{display:flex;flex-direction:column}
+.dl-row{display:flex;align-items:center;gap:12px;padding:11px 0;
+border-bottom:1px solid var(--line);cursor:pointer}
+.dl-row:last-child{border-bottom:0}
+.dl-row:hover{background:#f8fafc}
+.dl-row b{font-size:13.5px;font-weight:600}
+.dl-row .ev{margin-top:2px}
+.dl-tag{margin-left:auto;font-size:11.5px;font-weight:600;padding:3px 11px;border-radius:999px;
+white-space:nowrap}
+.dl-tag.passed{background:var(--del);color:var(--high)}
+.dl-tag.soon{background:#fdf3e7;color:var(--medium)}
+.dl-tag.ok{background:#eef2f7;color:var(--muted)}
+
+.hits{display:flex;flex-direction:column;gap:10px}
+.hit{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 18px;
+box-shadow:var(--shadow);cursor:pointer}
+.hit:hover{border-color:var(--accent)}
+.hit-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.hit-head b{font-size:14px;font-weight:600}
+.hit-head .ev{margin-left:auto}
+.hit p{margin:8px 0 0;font-size:13px;line-height:1.7;color:var(--ink-2);white-space:pre-wrap}
+.hit mark{background:#fff3c4;border-radius:3px;padding:0 2px}
 .vrow{cursor:pointer}
 .vrow:hover{background:#f8fafc}
 .vrow[aria-expanded="true"]{background:var(--accent-soft)}
@@ -371,6 +394,7 @@ _APP_JS = r"""
   function goContracts(){ show('contracts'); crumbs([{label:'계약상세'}]); tell('contracts'); }
   function goCreate(){ show('create'); crumbs([{label:'계약생성'}]); tell('create'); }
   function goCustomers(){ show('customers'); crumbs([{label:'고객관리'}]); tell('customers'); }
+  function goSearch(){ show('search'); crumbs([{label:'조항검색'}]); tell('search'); }
 
   function goDetail(id, title){
     document.querySelectorAll('[data-detail]').forEach(function(el){
@@ -398,7 +422,8 @@ _APP_JS = r"""
     dashboard: goDashboard,
     contracts: goContracts,
     create: goCreate,
-    customers: goCustomers
+    customers: goCustomers,
+    search: goSearch
   };
   navButtons.forEach(function(btn){
     btn.addEventListener('click', function(){
@@ -689,6 +714,28 @@ _APP_JS = r"""
     });
   });
 
+  // 조항검색 — 계약을 가로질러 최신 조문에서 찾는다.
+  var hits = document.querySelectorAll('.hit');
+  var hitCount = document.querySelector('.js-hit-count');
+  var searchEmpty = document.querySelector('.js-search-empty');
+  var clauseSearch = document.querySelector('.js-clause-search');
+  if (clauseSearch) {
+    clauseSearch.addEventListener('input', function(){
+      var q = clauseSearch.value.trim().toLowerCase();
+      var n = 0;
+      hits.forEach(function(el){
+        var ok = q.length >= 2 && (el.dataset.search || '').indexOf(q) >= 0;
+        el.hidden = !ok;
+        if (ok) n++;
+      });
+      hitCount.textContent = n;
+      searchEmpty.textContent = q.length < 2
+        ? '두 글자 이상 입력하십시오.'
+        : (n ? '' : '일치하는 조문이 없습니다.');
+      searchEmpty.style.display = (q.length < 2 || !n) ? '' : 'none';
+    });
+  }
+
   // ── 업로드 / 내려받기 ─────────────────────────────
   var live = location.protocol === 'http:' || location.protocol === 'https:';
 
@@ -807,6 +854,7 @@ class ContractEntry:
     versions: list[VersionRecord] = field(default_factory=list)
     timeline: list[TimelineStep] = field(default_factory=list)
     results: list[ReviewResult] = field(default_factory=list)
+    deadline: Deadline = field(default_factory=Deadline)
     texts: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
     """버전별 조문 원문 — {버전: [(조문 제목, 본문), …]}."""
 
@@ -899,6 +947,7 @@ def render_workspace(entries: list[ContractEntry]) -> str:
   <button data-goto="create"><span>계약생성</span></button>
   <button data-goto="customers"><span>고객관리</span>
     <span class="cnt">{_party_total(entries)}</span></button>
+  <button data-goto="search"><span>조항검색</span></button>
   <div class="foot">
     계약 {len(entries)}건 · 버전 {total_versions}개<br>마지막 분석 {_e(_last_run(entries))}
   </div>
@@ -924,6 +973,10 @@ def render_workspace(entries: list[ContractEntry]) -> str:
 
 <div class="view" data-app-view="customers" hidden>
 {_customers_view(entries)}
+</div>
+
+<div class="view" data-app-view="search" hidden>
+{_search_view(entries)}
 </div>
 
 <div class="view" data-app-view="detail" hidden>
@@ -998,6 +1051,7 @@ def _dashboard(entries, total_versions: int, total_high: int, total_changes: int
 </div>
 {_status_board(entries)}
 <div class="kpis">{kpi_html}</div>
+{_deadline_panel(entries)}
 <div class="panels">
   <div class="card"><h2>최근 개정 활동</h2><div class="feed">{feed}</div></div>
   <div class="card"><h2>분류별 계약 수</h2><div class="dist">{dist}</div></div>
@@ -1354,6 +1408,89 @@ def _version_docs(entry: ContractEntry) -> str:
             f'<div class="vdoc-body">{body}</div></div>'
         )
     return "".join(panels)
+
+
+def _deadline_panel(entries: list[ContractEntry]) -> str:
+    """다가오는 기한.
+
+    자동 갱신 계약은 갱신 거절 통지 기한을 넘기면 조건이 그대로 한 해 더 간다.
+    계약기간 조문에 이미 적혀 있는 날짜를 앞으로 당겨 보여 준다.
+    """
+    dated = [e for e in entries if e.deadline.known]
+    if not dated:
+        return ""
+
+    def key(entry: ContractEntry):
+        target = entry.deadline.notify_by or entry.deadline.ends_on
+        return target
+
+    rows = []
+    for entry in sorted(dated, key=key)[:6]:
+        d = entry.deadline
+        urgency = d.urgency()
+        left = d.notice_days_left() if d.notify_by else d.days_left()
+        when = "통지 기한" if d.notify_by else "계약 만료"
+        label = {
+            "passed": f"{abs(left)}일 지남",
+            "soon": f"{left}일 남음",
+            "ok": f"{left}일 남음",
+        }.get(urgency, "-")
+        rows.append(
+            f'<div class="dl-row" data-open="{_e(entry.contract_id)}" '
+            f'data-title="{_e(entry.label)}">'
+            f'<div><b>{_e(entry.label)}</b>'
+            f'<div class="ev">{_e(when)} {_e(str(d.notify_by or d.ends_on))}'
+            + (" · 자동 갱신" if d.auto_renew else "")
+            + f" · 근거 {_e(d.source)}</div></div>"
+            f'<span class="dl-tag {urgency}">{_e(label)}</span></div>'
+        )
+
+    counts = {"passed": 0, "soon": 0, "ok": 0}
+    for entry in dated:
+        counts[entry.deadline.urgency()] = counts.get(entry.deadline.urgency(), 0) + 1
+
+    return f"""<div class="card" style="margin-bottom:20px">
+  <h2>다가오는 기한
+    <span class="badge">기한 확인 {len(dated)}건</span>
+    {f'<span class="badge high">지남 {counts["passed"]}</span>' if counts["passed"] else ""}
+    {f'<span class="badge medium">30일 이내 {counts["soon"]}</span>' if counts["soon"] else ""}
+  </h2>
+  <div class="dl-list">{"".join(rows)}</div>
+</div>"""
+
+
+def _search_view(entries: list[ContractEntry]) -> str:
+    """계약을 가로질러 조문을 찾는다.
+
+    "지체상금이 들어간 계약이 어디였더라"를 계약을 하나씩 열어 확인하던 일을
+    한 번에 끝낸다. 조문 원문은 이미 페이지에 들어 있어 서버를 다시 부르지 않는다.
+    """
+    cards = []
+    for entry in entries:
+        latest = entry.latest
+        for heading, body in entry.texts.get(latest, []):
+            blob = f"{entry.label} {heading} {body}".lower()
+            cards.append(
+                f'<div class="hit" data-search="{_e(blob)}" '
+                f'data-open="{_e(entry.contract_id)}" data-title="{_e(entry.label)}" hidden>'
+                f'<div class="hit-head"><b>{_e(heading)}</b>'
+                f'<span class="badge cat">{_e(entry.category)}</span>'
+                f'<span class="ev">{_e(entry.label)} · {_e(latest)}</span></div>'
+                f"<p>{_e(body)}</p></div>"
+            )
+
+    return f"""<div class="vhead">
+  <div><h2>조항검색</h2>
+    <p>모든 계약의 최신 버전 조문에서 찾습니다. 총 {len(cards)}개 조문.</p>
+  </div>
+</div>
+<div class="toolbar">
+  <input class="js-clause-search" type="search"
+    placeholder="예: 지체상금, 연대보증, 국외 이전, 위약벌">
+  <span class="ev"><b class="js-hit-count">0</b>건</span>
+</div>
+<div class="hits">{"".join(cards)}</div>
+<div class="empty js-search-empty">찾을 문구를 입력하십시오.</div>"""
 
 
 def _party_total(entries: list[ContractEntry]) -> int:
