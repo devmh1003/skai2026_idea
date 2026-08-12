@@ -34,6 +34,29 @@ def diff_segments(before: str, after: str) -> list[DiffSegment]:
     return [s for s in segments if s.text]
 
 
+_SENTENCE_RE = re.compile(r"[^\n.。]+[.。]?")
+
+
+def sentence_changes(before: str, after: str) -> tuple[list[str], list[str]]:
+    """문장 단위로 삭제·추가된 문장을 뽑는다.
+
+    조문을 통째로 다시 쓴 개정에서는 단어 단위 diff가 수십 개의 조각으로
+    부서져 오히려 읽기 어렵다. 그럴 때는 문장 단위가 사람 눈에 맞다.
+    """
+    a = [s.strip() for s in _SENTENCE_RE.findall(before) if s.strip()]
+    b = [s.strip() for s in _SENTENCE_RE.findall(after) if s.strip()]
+
+    matcher = SequenceMatcher(a=a, b=b, autojunk=False)
+    removed: list[str] = []
+    added: list[str] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag in ("delete", "replace"):
+            removed.extend(a[i1:i2])
+        if tag in ("insert", "replace"):
+            added.extend(b[j1:j2])
+    return removed, added
+
+
 def summarize_segments(segments: list[DiffSegment], limit: int = 6) -> str:
     """LLM 프롬프트에 넣을 변경점 요약. 공백만 바뀐 조각은 버린다."""
     removed = [s.text.strip() for s in segments if s.op == "delete" and s.text.strip()]

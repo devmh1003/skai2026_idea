@@ -353,9 +353,10 @@ def test_review_end_to_end_offline(tmp_path):
     assert "</script>" in page  # 데이터 블록이 문서를 깨뜨리지 않았는지
 
 
-def test_render_portal_two_step_selection(tmp_path):
-    """포털은 계약 → 비교본 → 결과 순으로 화면을 나눠 보여준다."""
-    from contract_review_ai.report import PortalContract, render_portal
+def test_render_workspace_views(tmp_path):
+    """워크스페이스는 대시보드·계약·상세·결과 화면을 모두 담는다."""
+    from contract_review_ai.models import VersionRecord
+    from contract_review_ai.report import ContractEntry, render_workspace
 
     before = tmp_path / "v1.txt"
     after = tmp_path / "v2.txt"
@@ -363,13 +364,40 @@ def test_render_portal_two_step_selection(tmp_path):
     after.write_text(V2, encoding="utf-8")
     result = review_contracts(before, after, backend=OfflineBackend(), progress=None)
 
-    page = render_portal(
-        [PortalContract(contract_id="계약A", title="물류 위탁계약", results=[result])]
+    entry = ContractEntry(
+        contract_id="계약A",
+        title="물류 위탁계약",
+        category="용역·도급",
+        versions=[
+            VersionRecord("v1", "당사 초안", "v1.txt", "a" * 64, "2026-08-12 10:00:00"),
+            VersionRecord("v2", "상대방 수정본", "v2.txt", "b" * 64, "2026-08-12 11:00:00"),
+        ],
+        results=[result],
     )
-    assert 'data-screen="contracts"' in page
-    assert 'data-screen="samples"' in page
-    assert 'data-screen="result"' in page
+    page = render_workspace([entry])
+
+    for view in ("dashboard", "contracts", "detail", "result"):
+        assert f'data-app-view="{view}"' in page
     assert "물류 위탁계약" in page
-    assert "계약 선택" in page
-    # 결과 패널은 단건 리포트와 같은 마크업을 재사용한다.
+    assert "용역·도급" in page
+    assert "aaaaaaaaaaaa…" in page  # 버전 해시 표기
     assert page.count('class="result-panel"') == 1
+
+
+def test_workspace_exposes_party_editor(tmp_path):
+    """당사자 명부는 화면에서 수정·제외·추가할 수 있어야 한다."""
+    from contract_review_ai.report import ContractEntry, render_workspace
+
+    before = tmp_path / "v1.txt"
+    after = tmp_path / "v2.txt"
+    before.write_text(V1, encoding="utf-8")
+    after.write_text(V2, encoding="utf-8")
+    result = review_contracts(before, after, backend=OfflineBackend(), progress=None)
+
+    page = render_workspace([ContractEntry(contract_id="계약A", results=[result])])
+    assert 'data-party-manager="계약A"' in page
+    assert 'data-act="add"' in page
+    assert 'data-act="toggle"' in page
+    # 결과 패널의 당사자 열에도 식별자가 붙어야 편집이 반영된다.
+    assert 'data-party="갑"' in page
+    assert "data-party-label" in page

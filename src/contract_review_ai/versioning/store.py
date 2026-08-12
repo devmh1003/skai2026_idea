@@ -75,6 +75,12 @@ class VersionStore:
 
     # ---------- 등록 ----------
 
+    def category(self, contract_id: str) -> str:
+        return self.load(contract_id).get("category", "") or "미분류"
+
+    def title(self, contract_id: str) -> str:
+        return self.load(contract_id).get("title", "") or contract_id
+
     def add(
         self,
         contract_id: str,
@@ -82,6 +88,7 @@ class VersionStore:
         label: str = "",
         note: str = "",
         title: str = "",
+        category: str = "",
     ) -> VersionRecord:
         source = Path(source)
         if not source.is_file():
@@ -92,6 +99,7 @@ class VersionStore:
         manifest = self.load(contract_id)
         manifest["contract_id"] = contract_id
         manifest["title"] = title or manifest.get("title") or contract_id
+        manifest["category"] = category or manifest.get("category") or ""
 
         records = [VersionRecord(**v) for v in manifest.get("versions", [])]
         digest = _sha256(source)

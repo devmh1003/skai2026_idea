@@ -17,7 +17,15 @@ from pathlib import Path
 from .config import BACKENDS, DEFAULT_MODEL, Settings
 from .console import force_utf8
 from .models import RiskLevel
-from .report import PortalContract, render_html, render_markdown, render_portal
+from .report import (
+    ContractEntry,
+    render_contract_index_csv,
+    render_csv,
+    render_html,
+    render_markdown,
+    render_version_index_csv,
+    render_workspace,
+)
 from .review import review_contracts, review_versions
 from .risk import RuleFileError, build_ruleset, export_rules
 from .versioning import VersionStore, build_timeline
@@ -28,7 +36,8 @@ _LEVELS = {
     "low": RiskLevel.LOW,
     "info": RiskLevel.INFO,
 }
-_SUBCOMMANDS = {"review", "version", "history", "rules", "portal"}
+_SUBCOMMANDS = {"review", "version", "history", "rules", "workspace", "new", "attach"}
+FORMATS = ("md", "html", "json", "csv")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -89,9 +98,26 @@ def build_parser() -> argparse.ArgumentParser:
         default="info",
         help="이 위험도 이상인 변경 조문만 LLM 코멘트 생성 (기본: info = 전부)",
     )
-    review.add_argument("--format", default="md,html,json", help="출력 형식 (md,html,json)")
+    review.add_argument(
+        "--format",
+        default="md,html,json",
+        help="출력 형식. md,html,json,csv 중 콤마로 조합하거나 all (기본: md,html,json)",
+    )
     review.add_argument("--max-new-tokens", type=int, default=None, help="조문당 생성 토큰 상한")
     review.add_argument("-q", "--quiet", action="store_true", help="진행 로그 숨김")
+
+    new = sub.add_parser("new", help="계약을 새로 만들고 첫 원본을 첨부")
+    new.add_argument("contract_id", help="계약 ID (예: 2026-물류-001)")
+    new.add_argument("files", nargs="*", help="첨부할 계약서 파일 (여러 개면 v1,v2… 순서로)")
+    new.add_argument("--title", default="", help="계약명")
+    new.add_argument("--category", default="", help="분류 (예: 용역·도급)")
+    new.add_argument("--label", action="append", default=[], help="파일별 버전 라벨")
+
+    attach = sub.add_parser("attach", help="기존 계약에 파일을 버전으로 첨부")
+    attach.add_argument("contract_id")
+    attach.add_argument("files", nargs="+")
+    attach.add_argument("--label", action="append", default=[], help="파일별 버전 라벨")
+    attach.add_argument("--note", default="", help="메모")
 
     version = sub.add_parser("version", help="계약서 버전 관리")
     version_sub = version.add_subparsers(dest="version_command", required=True)
@@ -102,6 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--label", default="", help="버전 라벨 (예: '상대방 2차 수정본')")
     add.add_argument("--note", default="", help="메모")
     add.add_argument("--title", default="", help="계약 제목 (최초 등록 시)")
+    add.add_argument("--category", default="", help="계약 분류 (예: 용역, 공급, 임대차, 비밀유지)")
 
     listing = version_sub.add_parser("list", help="등록된 버전 조회")
     listing.add_argument("contract_id", nargs="?", default="")
@@ -109,7 +136,7 @@ def build_parser() -> argparse.ArgumentParser:
     history = sub.add_parser("history", help="버전 체인 전체의 변경 이력 요약")
     history.add_argument("contract_id")
 
-    portal = sub.add_parser("portal", help="등록된 모든 계약을 한 페이지로 묶기")
+    portal = sub.add_parser("workspace", help="계약·버전·검토를 묶은 워크스페이스 생성")
     portal.add_argument("contract_id", nargs="*", help="대상 계약 ID (생략 시 전체)")
     portal.add_argument("-o", "--out", default="out", help="출력 폴더")
     portal.add_argument("--backend", choices=BACKENDS, default=None)
@@ -117,7 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
     portal.add_argument("--party", default="", help="코멘트 관점 (약칭 콤마 구분 또는 all)")
     portal.add_argument(
         "--min-level", choices=list(_LEVELS), default="medium",
-        help="LLM 코멘트를 생성할 최소 위험도 (기본: medium — 포털은 건수가 많아 기본값이 높습니다)",
+        help="LLM 코멘트를 생성할 최소 위험도 (기본: medium — 계약 수가 많아 기본값이 높습니다)",
     )
     portal.add_argument(
         "--pairs", choices=("adjacent", "all", "latest"), default="adjacent",
@@ -125,6 +152,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     portal.add_argument("--rules", action="append", default=[])
     portal.add_argument("--disable-rule", action="append", default=[])
+    portal.add_argument(
+        "--export", default="", help="추가 내보내기: csv (계약·버전 대장과 조문 표)"
+    )
     portal.add_argument("-q", "--quiet", action="store_true")
 
     rules = sub.add_parser("rules", help="쟁점 룰 조회·내보내기")
@@ -158,8 +188,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_history(args, store)
     if args.command == "rules":
         return _cmd_rules(args)
-    if args.command == "portal":
-        return _cmd_portal(args, store)
+    if args.command == "workspace":
+        return _cmd_workspace(args, store)
+    if args.command in ("new", "attach"):
+        return _cmd_attach(args, store)
     if args.command == "review":
         return _cmd_review(args, store)
 
@@ -180,7 +212,9 @@ def _cmd_review(args, store: VersionStore) -> int:
         settings.max_new_tokens = args.max_new_tokens
 
     formats = {f.strip().lower() for f in args.format.split(",") if f.strip()}
-    unknown = formats - {"md", "html", "json"}
+    if "all" in formats:
+        formats = set(FORMATS)
+    unknown = formats - set(FORMATS)
     if unknown:
         print(f"[오류] 알 수 없는 출력 형식: {', '.join(sorted(unknown))}", file=sys.stderr)
         return 2
@@ -216,7 +250,7 @@ def _cmd_review(args, store: VersionStore) -> int:
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"{result.before_doc.name}__vs__{result.after_doc.name}".replace(" ", "_")
+    stem = _export_stem(result)
     written: list[Path] = []
 
     renderers = {
@@ -233,6 +267,10 @@ def _cmd_review(args, store: VersionStore) -> int:
         path.write_text(
             json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        written.append(path)
+    if "csv" in formats:
+        path = out_dir / f"{stem}.csv"
+        path.write_text(render_csv(result), encoding="utf-8")
         written.append(path)
 
     risks = result.risk_counts()
@@ -254,7 +292,12 @@ def _cmd_version(args, store: VersionStore) -> int:
     if args.version_command == "add":
         try:
             record = store.add(
-                args.contract_id, args.file, label=args.label, note=args.note, title=args.title
+                args.contract_id,
+                args.file,
+                label=args.label,
+                note=args.note,
+                title=args.title,
+                category=args.category,
             )
         except (FileNotFoundError, ValueError) as exc:
             print(f"[오류] {exc}", file=sys.stderr)
@@ -313,7 +356,7 @@ def _cmd_history(args, store: VersionStore) -> int:
     return 0
 
 
-# ---------------------------------------------------------------- portal
+# ---------------------------------------------------------------- workspace
 
 
 def _version_pairs(versions: list[str], mode: str) -> list[tuple[str, str]]:
@@ -331,7 +374,7 @@ def _version_pairs(versions: list[str], mode: str) -> list[tuple[str, str]]:
     return pairs
 
 
-def _cmd_portal(args, store: VersionStore) -> int:
+def _cmd_workspace(args, store: VersionStore) -> int:
     settings = Settings.from_env()
     if args.backend:
         settings.backend = args.backend
@@ -345,7 +388,7 @@ def _cmd_portal(args, store: VersionStore) -> int:
 
     views = [v.strip() for v in args.party.split(",") if v.strip()]
     say = (lambda _: None) if args.quiet else (lambda m: print(m, file=sys.stderr))
-    contracts: list[PortalContract] = []
+    contracts: list[ContractEntry] = []
 
     for contract_id in targets:
         records = store.versions(contract_id)
@@ -354,8 +397,12 @@ def _cmd_portal(args, store: VersionStore) -> int:
             say(f"{contract_id}: 버전이 2개 미만이라 건너뜁니다.")
             continue
 
-        entry = PortalContract(
-            contract_id=contract_id, title=store.load(contract_id).get("title", contract_id)
+        entry = ContractEntry(
+            contract_id=contract_id,
+            title=store.title(contract_id),
+            category=store.category(contract_id),
+            versions=records,
+            timeline=build_timeline(store, contract_id),
         )
         for before, after in pairs:
             say(f"[{contract_id}] {before} → {after} 검토 중…")
@@ -385,14 +432,93 @@ def _cmd_portal(args, store: VersionStore) -> int:
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / "portal.html"
-    path.write_text(render_portal(contracts), encoding="utf-8")
+    path = out_dir / "workspace.html"
+    path.write_text(render_workspace(contracts), encoding="utf-8")
+
+    written = [path]
+    if "csv" in {f.strip().lower() for f in args.export.split(",") if f.strip()}:
+        written += _write_workspace_csv(contracts, out_dir)
 
     total = sum(len(c.results) for c in contracts)
     high = sum(c.high for c in contracts)
     print(f"계약 {len(contracts)}건 · 비교본 {total}개 · 고위험 {high}건")
-    print(f"  → {path}")
+    for item in written:
+        print(f"  → {item}")
     return 0
+
+
+def _write_workspace_csv(contracts: list[ContractEntry], out_dir: Path) -> list[Path]:
+    """계약 대장·버전 대장·조문 표를 한 번에 떨어뜨린다(감사·보고용)."""
+    index = out_dir / "계약대장.csv"
+    index.write_text(
+        render_contract_index_csv(
+            [
+                {
+                    "contract_id": c.contract_id,
+                    "title": c.label,
+                    "category": c.category,
+                    "versions": len(c.versions),
+                    "latest": c.latest,
+                    "high": c.high,
+                    "updated_at": c.updated_at,
+                }
+                for c in contracts
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    versions = out_dir / "버전대장.csv"
+    versions.write_text(
+        render_version_index_csv(
+            [
+                {
+                    "contract_id": c.contract_id,
+                    "title": c.label,
+                    "version": r.version,
+                    "label": r.label,
+                    "imported_at": r.imported_at,
+                    "sha256": r.sha256,
+                    "note": r.note,
+                    "file": r.file,
+                }
+                for c in contracts
+                for r in c.versions
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    written = [index, versions]
+    clause_dir = out_dir / "조문표"
+    clause_dir.mkdir(exist_ok=True)
+    for contract in contracts:
+        for result in contract.results:
+            path = clause_dir / f"{_export_stem(result, contract.contract_id)}.csv"
+            path.write_text(render_csv(result, contract.contract_id), encoding="utf-8")
+            written.append(path)
+    return written
+
+
+def _export_stem(result, contract_id: str = "") -> str:
+    """내보내기 파일명. 어떤 계약의 몇 번 버전 비교인지 이름만 보고 알 수 있어야 한다.
+
+        2026-물류-001_v1-v3.csv
+        용역계약서_v1__vs__용역계약서_v2.csv   (버전 저장소를 쓰지 않은 경우)
+    """
+    contract_id = contract_id or result.contract_id
+    before, after = result.before_doc.version, result.after_doc.version
+    if contract_id and before and after:
+        return _safe_name(f"{contract_id}_{before}-{after}")
+    if before and after:
+        return _safe_name(f"{result.before_doc.name}_{before}-{after}")
+    return _safe_name(f"{result.before_doc.name}__vs__{result.after_doc.name}")
+
+
+def _safe_name(text: str) -> str:
+    import re
+
+    return re.sub(r'[\/:*?"<>|]+', "_", text).replace(" ", "_")
 
 
 # ---------------------------------------------------------------- rules
@@ -423,6 +549,67 @@ def _cmd_rules(args) -> int:
     if disabled:
         print(f"\n해제됨: {', '.join(sorted(disabled))}")
     return 0
+
+
+# ---------------------------------------------------------------- new / attach
+
+
+def _cmd_attach(args, store: VersionStore) -> int:
+    """계약을 만들거나, 기존 계약에 파일을 버전으로 붙인다."""
+    creating = args.command == "new"
+    files = list(args.files)
+    if not files:
+        if not creating:
+            print("[오류] 첨부할 파일을 지정하십시오.", file=sys.stderr)
+            return 2
+        # 파일 없이 계약 껍데기만 만드는 경우
+        folder = store.root / _safe_id(args.contract_id)
+        folder.mkdir(parents=True, exist_ok=True)
+        manifest = store.load(args.contract_id)
+        manifest.update(
+            {
+                "contract_id": args.contract_id,
+                "title": args.title or args.contract_id,
+                "category": args.category,
+                "versions": manifest.get("versions", []),
+            }
+        )
+        store.manifest_path(args.contract_id).write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print(f"{args.contract_id} 계약을 만들었습니다. attach 로 원본을 첨부하십시오.")
+        return 0
+
+    labels = list(args.label)
+    added = 0
+    for index, path in enumerate(files):
+        label = labels[index] if index < len(labels) else Path(path).stem
+        try:
+            record = store.add(
+                args.contract_id,
+                path,
+                label=label,
+                note=getattr(args, "note", ""),
+                title=getattr(args, "title", ""),
+                category=getattr(args, "category", ""),
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"[건너뜀] {path}: {exc}", file=sys.stderr)
+            continue
+        print(f"{args.contract_id} · {record.version} 첨부: {record.label}")
+        print(f"  {record.file}  sha256:{record.sha256[:16]}…")
+        added += 1
+
+    if not added:
+        return 1
+    print(f"총 {added}개 파일을 첨부했습니다.")
+    return 0
+
+
+def _safe_id(name: str) -> str:
+    from .versioning.store import _safe
+
+    return _safe(name)
 
 
 if __name__ == "__main__":

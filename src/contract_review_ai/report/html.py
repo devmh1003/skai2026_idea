@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import html
 import json
+import re
 
 from .. import DISCLAIMER
-from ..models import ClauseComparison, ReviewResult
+from ..diffing import sentence_changes
+from ..models import ClauseComparison, DiffSegment, ReviewResult
 
 _RISK_COLOR = {
     "high": "#b42318",
@@ -23,6 +25,8 @@ _RISK_COLOR = {
     "info": "#98a2b3",
 }
 _VERDICT_COLOR = {"adverse": "#b42318", "favorable": "#087443", "neutral": "#98a2b3"}
+
+_SENTENCE_SPLIT = re.compile(r"[^.。]*[.。]?")
 
 CSS = """
 /* 엔터프라이즈 톤: 중립 무채색 표면에 액센트 하나, 얇은 보더, 낮은 라운드.
@@ -175,6 +179,10 @@ line-height:1.6}
 .drow.d .txt{color:var(--high);text-decoration:line-through;text-decoration-color:#e6a49e}
 .drow.i .txt{color:var(--ok)}
 
+.g{display:none}
+.clause-list[data-grain="sentence"] .g.s{display:inline}
+.clause-list[data-grain="word"] .g.w{display:inline}
+.clause-list:not([data-grain]) .g.s{display:inline}
 .unified{display:none;margin-top:14px}
 .clause-list[data-view="unified"] .cols{display:none}
 .clause-list[data-view="unified"] .unified{display:block}
@@ -266,6 +274,15 @@ JS = """
       });
     });
 
+    panel.querySelectorAll('.chip[data-grain]').forEach(function(chip){
+      chip.addEventListener('click', function(){
+        panel.querySelectorAll('.chip[data-grain]').forEach(function(c){
+          c.setAttribute('aria-pressed', String(c === chip));
+        });
+        list.dataset.grain = chip.dataset.grain;
+      });
+    });
+
     panel.querySelectorAll('.chip[data-view]').forEach(function(chip){
       chip.addEventListener('click', function(){
         panel.querySelectorAll('.chip[data-view]').forEach(function(c){
@@ -330,7 +347,7 @@ def render_result_panel(result: ReviewResult) -> str:
 
 <section data-panel="clauses">
 {_toolbar(result)}
-<div class="clause-list" data-view="split">{clauses}</div>
+<div class="clause-list" data-view="split" data-grain="sentence">{clauses}</div>
 </section>
 
 <section data-panel="parties" hidden>
@@ -417,6 +434,11 @@ def _toolbar(result: ReviewResult) -> str:
     <button class="chip" data-view="split" aria-pressed="true">좌우 대비</button>
     <button class="chip" data-view="unified" aria-pressed="false">통합 대조</button>
   </div>
+  <div class="group">
+    <span class="lb">비교 단위</span>
+    <button class="chip" data-grain="sentence" aria-pressed="true">문장</button>
+    <button class="chip" data-grain="word" aria-pressed="false">단어</button>
+  </div>
   <span class="ev"><b class="js-shown">0</b>건</span>
 </div>
 <div class="difflegend">
@@ -459,15 +481,23 @@ def _clause_html(comp: ClauseComparison) -> str:
         f'<span class="tag {level.value}">위험도 {_e(level.label)}</span>',
         f'<span class="tag">{_e(comp.status.label)}</span>',
     ]
-    parts += [f'<span class="tag adverse">{_e(i.alias)} 불리</span>' for i in adverse]
-    parts += [f'<span class="tag favorable">{_e(i.alias)} 유리</span>' for i in favorable]
+    parts += [
+        f'<span class="tag adverse" data-party="{_e(i.party_id)}" data-party-alias>'
+        f"{_e(i.alias)} 불리</span>"
+        for i in adverse
+    ]
+    parts += [
+        f'<span class="tag favorable" data-party="{_e(i.party_id)}" data-party-alias>'
+        f"{_e(i.alias)} 유리</span>"
+        for i in favorable
+    ]
     parts.append("</div>")
 
     parts.append(_digest_html(comp))
     parts += [
         '<div class="cols">',
-        f'<div><span class="lbl">변경 전</span><pre>{_diff_html(comp, "before")}</pre></div>',
-        f'<div><span class="lbl">변경 후</span><pre>{_diff_html(comp, "after")}</pre></div>',
+        f'<div><span class="lbl">변경 전</span><pre>{_grain_html(comp, "before")}</pre></div>',
+        f'<div><span class="lbl">변경 후</span><pre>{_grain_html(comp, "after")}</pre></div>',
         "</div>",
         '<div class="unified"><span class="lbl">통합 대조</span>'
         f"<pre>{_unified_html(comp)}</pre></div>",
@@ -499,8 +529,9 @@ def _digest_html(comp: ClauseComparison, limit: int = 8) -> str:
     좌우 대조는 문맥을 보여주지만 '무엇이 바뀌었는지'를 찾으려면 눈이 두 번
     움직여야 한다. 삭제·추가된 문언만 뽑아 먼저 보여준다.
     """
-    removed = [s.text.strip() for s in comp.segments if s.op == "delete" and s.text.strip()]
-    added = [s.text.strip() for s in comp.segments if s.op == "insert" and s.text.strip()]
+    before = comp.before.full_text if comp.before else ""
+    after = comp.after.full_text if comp.after else ""
+    removed, added = sentence_changes(before, after)
     if not removed and not added:
         return ""
 
@@ -542,15 +573,55 @@ def _unified_html(comp: ClauseComparison) -> str:
     return "".join(out)
 
 
-def _diff_html(comp: ClauseComparison, side: str) -> str:
+def _sentence_segments(comp: ClauseComparison) -> list[DiffSegment]:
+    """문장 단위 대비용 세그먼트.
+
+    단어 단위 diff는 조문을 통째로 다시 쓴 개정에서 수십 개 조각으로 부서진다.
+    실무에서는 "이 문장이 이 문장으로 바뀌었다"가 훨씬 빨리 읽히므로 이쪽을
+    기본값으로 둔다.
+    """
+    before = comp.before.full_text if comp.before else ""
+    after = comp.after.full_text if comp.after else ""
+    removed, added = sentence_changes(before, after)
+    removed_set, added_set = set(removed), set(added)
+
+    segments: list[DiffSegment] = []
+    for text, changed in _split_sentences(before, removed_set):
+        segments.append(DiffSegment("delete" if changed else "equal", text))
+    for text, changed in _split_sentences(after, added_set):
+        if changed:
+            segments.append(DiffSegment("insert", text))
+    return segments
+
+
+def _split_sentences(text: str, changed: set[str]) -> list[tuple[str, bool]]:
+    out: list[tuple[str, bool]] = []
+    for line in text.splitlines(keepends=True):
+        for piece in _SENTENCE_SPLIT.findall(line):
+            if piece:
+                out.append((piece, piece.strip() in changed))
+    return out
+
+
+def _grain_html(comp: ClauseComparison, side: str) -> str:
+    """문장/단어 두 벌을 함께 넣고, 보기 설정에 따라 CSS로 하나만 보인다."""
+    sentence = _diff_html(comp, side, _sentence_segments(comp))
+    word = _diff_html(comp, side, comp.segments)
+    return f'<span class="g s">{sentence}</span><span class="g w">{word}</span>'
+
+
+def _diff_html(
+    comp: ClauseComparison, side: str, segments: list[DiffSegment] | None = None
+) -> str:
     clause = comp.before if side == "before" else comp.after
     if clause is None:
         return '<span class="ev">(해당 조문 없음)</span>'
-    if not comp.segments:
+    segments = comp.segments if segments is None else segments
+    if not segments:
         return _e(clause.full_text)
 
     out = []
-    for seg in comp.segments:
+    for seg in segments:
         if seg.op == "equal":
             out.append(_e(seg.text))
         elif seg.op == "delete" and side == "before":
@@ -594,7 +665,12 @@ def _party_tab(result: ReviewResult, changed: list[ClauseComparison]) -> str:
     if not changed:
         return '<div class="empty">변경된 조문이 없습니다.</div>'
 
-    head = "".join(f'<th class="c">{_e(p.display())}</th>' for p in result.parties)
+    # data-party가 붙어 있어야 워크스페이스에서 당사자를 숨기거나 표기를 바꿀 때
+    # 이 표의 열까지 함께 반영할 수 있다.
+    head = "".join(
+        f'<th class="c" data-party="{_e(p.id)}" data-party-label>{_e(p.display())}</th>'
+        for p in result.parties
+    )
     rows = []
     for comp in changed:
         by_party = {i.party_id: i for i in comp.impacts}
@@ -602,12 +678,13 @@ def _party_tab(result: ReviewResult, changed: list[ClauseComparison]) -> str:
         for party in result.parties:
             impact = by_party.get(party.id)
             if impact is None or not impact.mentioned:
-                cells.append('<td class="c ev">–</td>')
+                cells.append(f'<td class="c ev" data-party="{_e(party.id)}">–</td>')
                 continue
             color = _VERDICT_COLOR[impact.verdict]
             sign = f"{impact.delta:+d}" if impact.delta else "0"
             cells.append(
-                f'<td class="c"><span class="dot" style="background:{color}22;color:{color}">'
+                f'<td class="c" data-party="{_e(party.id)}">'
+                f'<span class="dot" style="background:{color}22;color:{color}">'
                 f"{_e(impact.verdict_label)} {sign}</span></td>"
             )
         rows.append(
@@ -646,7 +723,8 @@ def _party_bars(result: ReviewResult) -> str:
         label = row["alias"] + (f' · {row["role"]}' if row["role"] else "")
         if total == 0:
             rows.append(
-                f'<tr><td>{_e(label)}</td><td colspan="2" class="ev">언급된 변경 조문 없음</td></tr>'
+                f'<tr data-party="{_e(row["party_id"])}"><td data-party-label>{_e(label)}</td>'
+                f'<td colspan="2" class="ev">언급된 변경 조문 없음</td></tr>'
             )
             continue
         segments, x = [], 0.0
@@ -659,7 +737,7 @@ def _party_bars(result: ReviewResult) -> str:
                 )
                 x += width
         rows.append(
-            f"<tr><td>{_e(label)}</td>"
+            f'<tr data-party="{_e(row["party_id"])}"><td data-party-label>{_e(label)}</td>'
             f'<td><svg width="240" height="14" viewBox="0 0 240 14">{"".join(segments)}</svg></td>'
             f'<td class="ev">불리 {row["adverse"]} · 중립 {row["neutral"]} · '
             f'유리 {row["favorable"]}'
