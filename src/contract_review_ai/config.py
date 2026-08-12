@@ -10,12 +10,13 @@ DEFAULT_MODEL = "skt/A.X-3.1-Light"
 """SKT A.X 계열 기본 모델. 7B / 32K 컨텍스트 / Apache-2.0.
 
 교체 후보:
+  skt/A.X-3.1        (34B, 32K · YaRN 적용 시 131K)
   skt/A.X-4.0-Light  (7B, 16K)
   skt/A.X-4.0        (72B)
   skt/A.X-K2         (692B, MoE — API 전용)
 """
 
-BACKENDS = ("auto", "local", "hf_api", "offline")
+BACKENDS = ("auto", "local", "pipeline", "hf_api", "adot_biz", "offline")
 
 
 def load_dotenv(path: str | Path = ".env") -> None:

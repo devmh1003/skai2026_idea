@@ -20,89 +20,193 @@ from .. import DISCLAIMER
 from ..models import ClauseComparison, ReviewResult
 
 _RISK_COLOR = {
-    "high": "#d92d20",
-    "medium": "#e07b00",
-    "low": "#c9a900",
-    "info": "#8a919c",
+    "high": "#8c1d18",
+    "medium": "#9a6b1c",
+    "low": "#6f6a52",
+    "info": "#8b8782",
 }
-_VERDICT_COLOR = {"adverse": "#d92d20", "favorable": "#1a7f4b", "neutral": "#8a919c"}
+_VERDICT_COLOR = {"adverse": "#8c1d18", "favorable": "#1f5136", "neutral": "#8b8782"}
 
 _CSS = """
-:root{--bg:#f5f6f8;--card:#fff;--line:#e3e6eb;--text:#171a1f;--muted:#697079;
---accent:#2b5cd9;--del:#fde3e1;--ins:#dbf3e3;--chip:#eef1f6;}
-@media (prefers-color-scheme:dark){:root{--bg:#101317;--card:#191d23;--line:#2a2f38;
---text:#e7eaee;--muted:#98a0ab;--accent:#7aa2ff;--del:#4a2320;--ins:#1c3a29;--chip:#232830;}}
+/* 대형 로펌 의견서 톤: 감청(navy) 바탕에 금박 포인트, 명조 계열 제목,
+   둥근 모서리 없이 얇은 괘선과 여백으로만 위계를 만든다. */
+:root{
+  --paper:#f4f2ed;      /* 미색 종이 */
+  --card:#ffffff;
+  --navy:#0e2340;       /* 표제·강조 */
+  --navy-soft:#1b3a5f;
+  --gold:#a4854b;       /* 괘선 포인트 */
+  --ink:#1c1c1a;
+  --muted:#6f6a62;
+  --line:#ddd8cf;
+  --line-strong:#c6bfb2;
+  --del:#f6e4e2;
+  --ins:#e4ecdf;
+  --chip:#f0ede6;
+}
+/* 서체: 본문은 명조(의견서 톤), 라벨·수치는 자간을 넓힌 산세리프. */
+:root{
+  --serif:"Nanum Myeongjo","Noto Serif KR","Source Han Serif K","Apple SD Gothic Neo",
+          Batang,바탕,"EB Garamond",Garamond,Georgia,"Times New Roman",serif;
+  --sans:"Pretendard","Noto Sans KR","Malgun Gothic","Apple SD Gothic Neo",
+         "Segoe UI",system-ui,sans-serif;
+}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);
-font-family:"Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;line-height:1.6;}
-.wrap{max-width:1180px;margin:0 auto;padding:22px 20px 60px}
-header h1{font-size:22px;margin:0 0 6px}
-.meta{color:var(--muted);font-size:13px}
-.meta b{color:var(--text);font-weight:600}
-.disclaimer{background:#fff5e0;color:#7a4b00;border:1px solid #efd8a4;border-radius:8px;
-padding:9px 13px;font-size:12.5px;margin:14px 0 18px}
-@media (prefers-color-scheme:dark){.disclaimer{background:#332710;color:#f0d9a8;border-color:#544120}}
-nav{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:20px;flex-wrap:wrap}
-nav button{font:inherit;font-size:14px;padding:9px 16px;border:0;background:none;cursor:pointer;
-color:var(--muted);border-bottom:2px solid transparent}
-nav button[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+body{margin:0;background:var(--paper);color:var(--ink);line-height:1.78;
+font-family:var(--serif);font-size:15px;letter-spacing:-.003em;
+-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+.wrap{max-width:1140px;margin:0 auto;padding:0 24px 76px}
+/* 라벨·수치·조작부는 산세리프로 — 본문 명조와 역할을 갈라 놓는다. */
+nav button,.chip,.tag,.lbl,th,.group .lb,.toolbar input,.count,.legend,.difflegend,
+.ev,.kpi .l,.dot,.mark,.sub{font-family:var(--sans)}
+
+/* ── 표제부 ───────────────────────────────────────── */
+.masthead{background:var(--navy);color:#f2efe8;padding:38px 24px 30px;
+border-bottom:3px solid var(--gold)}
+.masthead .inner{max-width:1092px;margin:0 auto;text-align:center}
+.mark{font-family:var(--sans);font-size:10.5px;letter-spacing:.5em;text-transform:uppercase;
+color:var(--gold);margin-bottom:16px;padding-left:.5em}
+.masthead h1{font-size:31px;font-weight:400;letter-spacing:.14em;margin:0;
+padding-left:.14em}
+.masthead .rule{width:52px;height:1px;background:var(--gold);margin:16px auto 14px}
+.masthead .sub{font-family:var(--sans);font-size:11px;letter-spacing:.2em;
+color:rgba(242,239,232,.55)}
+
+.disclaimer{border-left:2px solid var(--gold);background:#fbf9f4;color:#5c4a2a;
+padding:11px 17px;font-size:13px;margin:24px 0 0}
+
+/* ── 목차 탭 ───────────────────────────────────────── */
+nav{display:flex;gap:0;border-bottom:1px solid var(--line-strong);margin:22px 0 26px;
+flex-wrap:wrap}
+nav button{font:inherit;font-size:13px;letter-spacing:.09em;padding:11px 22px 10px;border:0;
+background:none;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;
+margin-bottom:-1px}
+nav button:hover{color:var(--navy)}
+nav button[aria-selected="true"]{color:var(--navy);border-bottom-color:var(--gold);font-weight:700}
 section[hidden]{display:none}
-.grid{display:grid;gap:12px}
-.kpis{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));margin-bottom:16px}
-.panels{grid-template-columns:1fr 1fr}
-@media(max-width:820px){.panels{grid-template-columns:1fr}}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
-.kpi .n{font-size:28px;font-weight:700;line-height:1.2}
-.kpi .l{font-size:12px;color:var(--muted)}
-h2{font-size:15px;margin:0 0 10px}
-.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
-.toolbar input{font:inherit;font-size:13px;padding:7px 12px;border-radius:8px;
-border:1px solid var(--line);background:var(--card);color:var(--text);min-width:200px;flex:1 1 220px}
-.chip{font:inherit;font-size:12.5px;padding:5px 12px;border-radius:999px;cursor:pointer;
-border:1px solid var(--line);background:var(--card);color:var(--text)}
-.chip[aria-pressed="true"]{background:var(--text);color:var(--bg);border-color:var(--text)}
+
+/* ── 카드·표제 ─────────────────────────────────────── */
+.strip{display:flex;align-items:center;gap:26px;flex-wrap:wrap;margin-top:26px;
+padding-bottom:22px;border-bottom:1px solid var(--line-strong)}
+.strip .kpis{flex:1 1 460px}
+.strip .donut{flex:0 0 auto}
+.grid{display:grid;gap:1px;background:var(--line)}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(104px,1fr));border:1px solid var(--line)}
+.card{background:var(--card);border:1px solid var(--line);padding:18px 22px}
+.kpi{background:var(--card);padding:14px 16px;text-align:center}
+.kpi .n{font-family:var(--serif);font-size:31px;font-weight:400;line-height:1.1;
+color:var(--navy)}
+.kpi .l{font-family:var(--sans);font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+margin-top:5px}
+.difflegend{display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:12.5px;
+margin:0 0 16px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+h2{font-family:var(--serif);font-size:16px;
+font-weight:700;color:var(--navy);margin:0 0 14px;padding-bottom:8px;
+border-bottom:1px solid var(--line)}
+
+/* ── 검색·필터 ─────────────────────────────────────── */
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.toolbar input{font:inherit;font-size:13px;padding:9px 13px;border:1px solid var(--line-strong);
+background:var(--card);color:var(--ink);min-width:200px;flex:1 1 240px}
+.toolbar input:focus{outline:0;border-color:var(--gold)}
+.chip{font:inherit;font-size:12.5px;padding:5px 13px;cursor:pointer;
+border:1px solid var(--line-strong);background:var(--card);color:var(--muted)}
+.chip:hover{color:var(--navy);border-color:var(--navy-soft)}
+.chip[aria-pressed="true"]{background:var(--navy);color:#f2efe8;border-color:var(--navy)}
 .group{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-.group .lb{font-size:12px;color:var(--muted);margin-right:2px}
-.clause{background:var(--card);border:1px solid var(--line);border-left-width:4px;
-border-radius:12px;padding:15px 17px;margin-bottom:12px}
-.clause[data-risk="high"]{border-left-color:#d92d20}
-.clause[data-risk="medium"]{border-left-color:#e07b00}
-.clause[data-risk="low"]{border-left-color:#c9a900}
-.clause[data-risk="info"]{border-left-color:#8a919c}
-.chead{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
-.chead h3{margin:0;font-size:15.5px;flex:1 1 auto}
-.tag{font-size:11.5px;padding:2px 9px;border-radius:999px;background:var(--chip);
-color:var(--muted);white-space:nowrap}
-.tag.high{background:#d92d20;color:#fff}
-.tag.medium{background:#e07b00;color:#fff}
-.tag.low{background:#f2e5a0;color:#5a4d00}
-.tag.adverse{background:#fbe3e1;color:#a01a12}
-.tag.favorable{background:#dcf0e5;color:#136139}
-@media (prefers-color-scheme:dark){.tag.adverse{background:#4a201d;color:#ffb4ad}
-.tag.favorable{background:#173629;color:#8fe0b4}.tag.low{background:#4a4210;color:#f2e5a0}}
-.cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:11px}
+.group .lb{font-size:11px;letter-spacing:.12em;color:var(--muted);margin-right:6px;min-width:44px}
+
+/* ── 조문 카드 ─────────────────────────────────────── */
+.clause{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--line-strong);
+padding:18px 22px;margin-bottom:14px}
+.clause[data-risk="high"]{border-left-color:#8c1d18}
+.clause[data-risk="medium"]{border-left-color:#9a6b1c}
+.clause[data-risk="low"]{border-left-color:#6f6a52}
+.chead{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px}
+.chead h3{font-family:var(--serif);margin:0;
+font-size:17px;font-weight:700;color:var(--navy);flex:1 1 auto}
+.tag{font-size:11px;letter-spacing:.04em;padding:2px 9px;background:var(--chip);
+color:var(--muted);white-space:nowrap;border:1px solid var(--line)}
+.tag.high{background:#8c1d18;color:#fff;border-color:#8c1d18}
+.tag.medium{background:#9a6b1c;color:#fff;border-color:#9a6b1c}
+.tag.low{background:#efe9d6;color:#5c5326;border-color:#ddd2ad}
+.tag.adverse{background:#f6e4e2;color:#7d1a15;border-color:#e6c6c2}
+.tag.favorable{background:#e4ecdf;color:#1f5136;border-color:#c6d8c2}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px}
 @media(max-width:760px){.cols{grid-template-columns:1fr}}
-pre{white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);
-border-radius:8px;padding:10px 12px;margin:5px 0 0;font-size:12.8px;
-font-family:"D2Coding",Consolas,monospace}
-.lbl{font-size:11.5px;color:var(--muted);font-weight:700;letter-spacing:.02em}
-del{background:var(--del);text-decoration:line-through}
-ins{background:var(--ins);text-decoration:none}
-details{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
-summary{cursor:pointer;font-size:13px;color:var(--accent);font-weight:600}
-ul{margin:6px 0;padding-left:19px}li{margin:3px 0;font-size:13.5px}
+pre{white-space:pre-wrap;word-break:break-word;background:#fbfaf7;border:1px solid var(--line);
+padding:12px 14px;margin:6px 0 0;font-size:13px;line-height:1.85;
+font-family:var(--serif);color:#7a766c}
+.lbl{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);
+font-weight:700}
+/* 변경분은 진하게, 그대로인 문맥은 흐리게 — 눈이 바뀐 곳으로 먼저 가도록. */
+del{background:#f7d9d6;color:#7d1a15;font-weight:700;text-decoration:line-through;
+text-decoration-thickness:2px;text-decoration-color:#b4534b;padding:0 2px;
+box-shadow:inset 2px 0 0 #8c1d18}
+ins{background:#d8e8d4;color:#17452c;font-weight:700;text-decoration:none;padding:0 2px;
+box-shadow:inset 2px 0 0 #1f5136}
+
+/* ── 변경 요지 (삭제 ↔ 추가 대응) ─────────────────── */
+.digest{margin-top:13px;border:1px solid var(--line-strong);background:#fdfcf9}
+.digest .dhead{display:flex;align-items:center;gap:10px;padding:7px 13px;
+border-bottom:1px solid var(--line);background:var(--chip)}
+.digest .dhead .lbl{color:var(--navy)}
+.digest .count{font-size:11.5px;font-weight:700;letter-spacing:.02em}
+.digest .count.del{color:#8c1d18}
+.digest .count.ins{color:#1f5136}
+.drow{display:grid;grid-template-columns:26px 1fr;gap:10px;padding:8px 13px;
+border-bottom:1px dotted var(--line);font-size:13px;line-height:1.6}
+.drow:last-child{border-bottom:0}
+.drow .sign{font-weight:700;text-align:center;font-size:14px}
+.drow.d .sign{color:#8c1d18}
+.drow.i .sign{color:#1f5136}
+.drow.d .txt{color:#7d1a15;text-decoration:line-through;text-decoration-color:#c08b86}
+.drow.i .txt{color:#17452c;font-weight:600}
+
+/* ── 대비 보기 / 통합 보기 ─────────────────────────── */
+.unified{display:none;margin-top:14px}
+#clause-list[data-view="unified"] .cols{display:none}
+#clause-list[data-view="unified"] .unified{display:block}
+#clause-list[data-view="unified"] .unified pre{color:#2a2a26}
+details{margin-top:15px;border-top:1px solid var(--line);padding-top:11px}
+summary{cursor:pointer;font-size:12.5px;color:var(--navy);font-weight:700;letter-spacing:.02em}
+summary:hover{color:var(--gold)}
+ul{margin:8px 0;padding-left:18px}
+li{margin:4px 0;font-size:13.5px}
+li::marker{color:var(--gold)}
+p{margin:8px 0}
 .ev{color:var(--muted);font-size:12px}
+b{color:var(--navy)}
+
+/* ── 표 ───────────────────────────────────────────── */
 table{width:100%;border-collapse:collapse;font-size:13px}
-th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left}
-th{font-size:12px;color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--card)}
+th,td{border-bottom:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:middle}
+th{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+font-weight:700;background:var(--card);border-bottom:1px solid var(--line-strong)}
+tbody tr:hover{background:#faf8f4}
 td.c{text-align:center}
-.dot{display:inline-block;min-width:44px;padding:2px 8px;border-radius:999px;font-size:11.5px}
-.step{display:flex;gap:14px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--line)}
+.dot{display:inline-block;min-width:52px;padding:2px 9px;font-size:11.5px;
+border:1px solid currentColor}
+
+/* ── 연혁 ─────────────────────────────────────────── */
+.step{display:flex;gap:20px;align-items:flex-start;padding:15px 0;
+border-bottom:1px solid var(--line)}
 .step:last-child{border-bottom:0}
-.step .v{font-weight:700;font-size:13px;white-space:nowrap;color:var(--accent);min-width:92px}
-.empty{color:var(--muted);padding:26px;text-align:center}
-.legend{font-size:12px;color:var(--muted);display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}
-.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px}
+.step .v{font-family:var(--serif);font-weight:700;
+font-size:14px;white-space:nowrap;color:var(--navy);min-width:104px}
+.empty{color:var(--muted);padding:34px;text-align:center;font-size:13.5px}
+.legend{font-size:11.5px;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;
+padding-top:10px;border-top:1px solid var(--line)}
+.legend i{display:inline-block;width:9px;height:9px;margin-right:6px}
+
+@media print{
+  body{background:#fff}
+  nav,.toolbar{display:none}
+  section[hidden]{display:block !important}
+  .clause,.card{break-inside:avoid;border-color:#bbb}
+  .masthead{background:#fff;color:var(--ink);border-bottom:2px solid var(--navy)}
+  .masthead h1,.docket span{color:var(--navy)}
+}
 """
 
 _JS = """
@@ -142,6 +246,16 @@ _JS = """
       refresh();
     });
   });
+  var list = document.getElementById('clause-list');
+  document.querySelectorAll('.chip[data-view]').forEach(function(chip){
+    chip.addEventListener('click', function(){
+      document.querySelectorAll('.chip[data-view]').forEach(function(c){
+        c.setAttribute('aria-pressed', String(c === chip));
+      });
+      if (list) list.dataset.view = chip.dataset.view;
+    });
+  });
+
   var search = document.getElementById('search');
   if (search) {
     search.addEventListener('input', function(){
@@ -159,44 +273,37 @@ def render_html(result: ReviewResult) -> str:
     counts = result.counts()
     risks = result.risk_counts()
 
-    version_note = ""
+    version_line = ""
     if result.before_doc.version or result.after_doc.version:
-        version_note = (
-            f' <b>{_e(result.before_doc.version or "?")} → '
-            f'{_e(result.after_doc.version or "?")}</b>'
+        version_line = (
+            f'{_e(result.before_doc.version or "?")} → {_e(result.after_doc.version or "?")}'
         )
 
     return f"""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>계약서 검토 대시보드 — {_e(result.after_doc.name)}</title>
+<title>계약 검토 의견서 — {_e(result.after_doc.name)}</title>
 <style>{_CSS}</style></head>
-<body><div class="wrap">
-<header>
-  <h1>계약서 비교 검토 대시보드</h1>
-  <div class="meta">
-    <b>{_e(result.before_doc.name)}</b> → <b>{_e(result.after_doc.name)}</b>{version_note}
-    &nbsp;·&nbsp; {_e(result.generated_at)}
-    &nbsp;·&nbsp; 코멘트 {_e(result.backend)}
-    &nbsp;·&nbsp; 당사자 {len(result.parties)}인
-  </div>
-</header>
-<div class="disclaimer">{_e(DISCLAIMER)}</div>
+<body>
+<div class="masthead"><div class="inner">
+  <div class="mark">Contract Review</div>
+  <h1>계약 개정안 검토 의견서</h1>
+  <div class="rule"></div>
+  <div class="sub">{_e(result.generated_at)}{f" · {version_line}" if version_line else ""}</div>
+</div></div>
+
+<div class="wrap">
+{_summary_strip(result, counts, risks)}
 
 <nav>
-  <button data-tab="tab-overview" aria-selected="true">개요</button>
-  <button data-tab="tab-clauses" aria-selected="false">조문 비교</button>
+  <button data-tab="tab-clauses" aria-selected="true">조문 대비</button>
   <button data-tab="tab-parties" aria-selected="false">당사자 영향</button>
-  <button data-tab="tab-history" aria-selected="false">변경 이력</button>
+  <button data-tab="tab-history" aria-selected="false">개정 연혁</button>
 </nav>
 
-<section id="tab-overview">
-{_overview(result, counts, risks)}
-</section>
-
-<section id="tab-clauses" hidden>
+<section id="tab-clauses">
 {_toolbar(result)}
-<div id="clause-list">
+<div id="clause-list" data-view="split">
 {"".join(_clause_html(c) for c in changed) or '<div class="empty">변경된 조문이 없습니다.</div>'}
 </div>
 </section>
@@ -209,53 +316,36 @@ def render_html(result: ReviewResult) -> str:
 {_history_tab(result)}
 </section>
 
+<div class="disclaimer">{_e(DISCLAIMER)}</div>
+
 <script id="review-data" type="application/json">{_json(result)}</script>
 <script>{_JS}</script>
 </div></body></html>"""
 
 
-# ---------------------------------------------------------------- 개요 탭
+# ---------------------------------------------------------------- 요약 스트립
 
 
-def _overview(result: ReviewResult, counts: dict[str, int], risks: dict[str, int]) -> str:
+def _summary_strip(result: ReviewResult, counts: dict[str, int], risks: dict[str, int]) -> str:
+    """탭 위에 항상 떠 있는 요약. 탭을 옮겨도 총량 감각을 잃지 않게 한다."""
     kpis = [
         ("변경 조문", counts["modified"] + counts["added"] + counts["deleted"], None),
         ("수정", counts["modified"], None),
         ("신설", counts["added"], None),
         ("삭제", counts["deleted"], None),
-        ("위험 높음", risks["high"], _RISK_COLOR["high"]),
-        ("위험 중간", risks["medium"], _RISK_COLOR["medium"]),
+        ("고위험", risks["high"], _RISK_COLOR["high"]),
+        ("중위험", risks["medium"], _RISK_COLOR["medium"]),
     ]
     kpi_html = "".join(
-        '<div class="card kpi"><div class="n"'
+        '<div class="kpi"><div class="n"'
         + (f" style='color:{color}'" if color else "")
         + f">{value}</div>"
         + f'<div class="l">{_e(label)}</div></div>'
         for label, value, color in kpis
     )
-
-    categories = result.category_counts()
-    return f"""
-<div class="grid kpis">{kpi_html}</div>
-<div class="grid panels">
-  <div class="card">
-    <h2>위험도 분포</h2>
-    {_donut(risks)}
-  </div>
-  <div class="card">
-    <h2>쟁점 카테고리 (변경 조문 기준)</h2>
-    {_bars(categories)}
-  </div>
-</div>
-<div class="card" style="margin-top:12px">
-  <h2>당사자별 영향 요약</h2>
-  {_party_bars(result)}
-  <div class="legend">
-    <span><i style="background:{_VERDICT_COLOR['adverse']}"></i>불리</span>
-    <span><i style="background:{_VERDICT_COLOR['neutral']}"></i>중립</span>
-    <span><i style="background:{_VERDICT_COLOR['favorable']}"></i>유리</span>
-    <span>· 문장 단위 권리/의무 표현 계수에 기반한 추정치입니다.</span>
-  </div>
+    return f"""<div class="strip">
+  <div class="grid kpis">{kpi_html}</div>
+  <div class="donut">{_donut(risks)}</div>
 </div>"""
 
 
@@ -309,8 +399,8 @@ def _bars(categories: dict[str, int]) -> str:
         y = 8 + i * 26
         rows.append(
             f'<text x="0" y="{y + 12}" font-size="12" fill="currentColor">{_e(name)}</text>'
-            f'<rect x="96" y="{y}" width="{width}" height="16" rx="4" fill="#2b5cd9" opacity="0.8"/>'
-            f'<text x="{96 + width + 6}" y="{y + 12}" font-size="11" fill="#8a919c">{value}</text>'
+            f'<rect x="96" y="{y}" width="{width}" height="14" fill="#0e2340" opacity="0.82"/>'
+            f'<text x="{96 + width + 7}" y="{y + 11}" font-size="11" fill="#6f6a62">{value}</text>'
         )
     height = 16 + len(items) * 26
     return (
@@ -375,9 +465,22 @@ def _toolbar(result: ReviewResult) -> str:
     party_options = [(p.id, f"{p.alias} 불리") for p in result.parties]
     category_options = [(c, c) for c in result.category_counts()][:12]
 
-    return f"""<div class="toolbar">
+    return f"""<div class="card" style="margin-bottom:18px">
+  <h2>쟁점 분포</h2>
+  {_bars(result.category_counts())}
+</div>
+<div class="toolbar">
   <input id="search" type="search" placeholder="조문 본문·코멘트 검색">
+  <div class="group">
+    <span class="lb">보기</span>
+    <button class="chip" data-view="split" aria-pressed="true">좌우 대비</button>
+    <button class="chip" data-view="unified" aria-pressed="false">통합 대조</button>
+  </div>
   <span class="ev"><b id="shown-count">0</b>건 표시</span>
+</div>
+<div class="difflegend">
+  <span><del>삭제된 문언</del></span><span><ins>추가된 문언</ins></span>
+  <span class="ev">흐린 글씨는 변경 없는 문맥입니다.</span>
 </div>
 <div class="toolbar">
 {chips("risk", [("high", "높음"), ("medium", "중간"), ("low", "낮음"), ("info", "참고")])}
@@ -427,11 +530,14 @@ def _clause_html(comp: ClauseComparison) -> str:
     parts += [f'<span class="tag favorable">{_e(i.alias)} 유리</span>' for i in favorable]
     parts.append("</div>")
 
+    parts.append(_digest_html(comp))
     parts += [
         '<div class="cols">',
         f'<div><span class="lbl">변경 전</span><pre>{_diff_html(comp, "before")}</pre></div>',
         f'<div><span class="lbl">변경 후</span><pre>{_diff_html(comp, "after")}</pre></div>',
         "</div>",
+        '<div class="unified"><span class="lbl">통합 대조</span>'
+        f"<pre>{_unified_html(comp)}</pre></div>",
     ]
 
     if comp.flags:
@@ -477,6 +583,61 @@ def _comment_html(comment) -> str:
         body.append(f"<b>권장 수정 문안</b><pre>{_e(comment.suggested_text)}</pre>")
     body.append("</details>")
     return "".join(body)
+
+
+def _digest_html(comp: ClauseComparison, limit: int = 8) -> str:
+    """조문 카드 맨 위에 붙는 변경 요지.
+
+    좌우 대조는 문맥을 보여주지만 '무엇이 바뀌었는지'를 찾으려면 눈이 두 번
+    움직여야 한다. 삭제·추가된 문언만 뽑아 먼저 보여준다.
+    """
+    removed = [s.text.strip() for s in comp.segments if s.op == "delete" and s.text.strip()]
+    added = [s.text.strip() for s in comp.segments if s.op == "insert" and s.text.strip()]
+    if not removed and not added:
+        return ""
+
+    rows = []
+    for text in removed[:limit]:
+        rows.append(f'<div class="drow d"><div class="sign">−</div>'
+                    f'<div class="txt">{_e(_clip(text))}</div></div>')
+    if len(removed) > limit:
+        rows.append(f'<div class="drow d"><div class="sign">−</div>'
+                    f'<div class="ev">삭제 {len(removed) - limit}건 더</div></div>')
+    for text in added[:limit]:
+        rows.append(f'<div class="drow i"><div class="sign">+</div>'
+                    f'<div class="txt">{_e(_clip(text))}</div></div>')
+    if len(added) > limit:
+        rows.append(f'<div class="drow i"><div class="sign">+</div>'
+                    f'<div class="ev">추가 {len(added) - limit}건 더</div></div>')
+
+    return (
+        '<div class="digest"><div class="dhead"><span class="lbl">변경 요지</span>'
+        f'<span class="count del">− 삭제 {len(removed)}</span>'
+        f'<span class="count ins">+ 추가 {len(added)}</span></div>'
+        f'{"".join(rows)}</div>'
+    )
+
+
+def _unified_html(comp: ClauseComparison) -> str:
+    """삭제·추가를 한 흐름에 겹쳐 보여주는 통합 대조."""
+    if not comp.segments:
+        clause = comp.after or comp.before
+        return _e(clause.full_text) if clause else ""
+
+    out = []
+    for seg in comp.segments:
+        if seg.op == "equal":
+            out.append(_e(seg.text))
+        elif seg.op == "delete":
+            out.append(f"<del>{_e(seg.text)}</del>")
+        else:
+            out.append(f"<ins>{_e(seg.text)}</ins>")
+    return "".join(out)
+
+
+def _clip(text: str, width: int = 220) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= width else text[:width] + " …"
 
 
 def _diff_html(comp: ClauseComparison, side: str) -> str:
@@ -528,7 +689,16 @@ def _party_tab(result: ReviewResult, changed: list[ClauseComparison]) -> str:
             f'<td class="c ev">{_e(comp.status.label)}</td>{"".join(cells)}</tr>'
         )
 
-    return f"""<div class="card">
+    return f"""<div class="card" style="margin-bottom:18px">
+<h2>당사자별 영향 요약</h2>
+{_party_bars(result)}
+<div class="legend">
+  <span><i style="background:{_VERDICT_COLOR['adverse']}"></i>불리</span>
+  <span><i style="background:{_VERDICT_COLOR['neutral']}"></i>중립</span>
+  <span><i style="background:{_VERDICT_COLOR['favorable']}"></i>유리</span>
+</div>
+</div>
+<div class="card">
 <h2>조문 × 당사자 영향 매트릭스</h2>
 <div style="overflow-x:auto">
 <table><thead><tr><th>조문</th><th class="c">구분</th>{head}</tr></thead>

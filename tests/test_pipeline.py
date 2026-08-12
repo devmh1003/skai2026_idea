@@ -113,6 +113,25 @@ def test_alignment_matches_renumbered_clause(tmp_path):
 # ---------------------------------------------------------------- 룰
 
 
+def test_alignment_matches_extended_title(tmp_path):
+    """'검수' → '검수 및 지체상금'처럼 제목이 확장돼도 같은 조문으로 봐야 한다."""
+    old = tmp_path / "old.txt"
+    new = tmp_path / "new.txt"
+    old.write_text(
+        "제4조(검수)\n갑은 인도일로부터 14일 이내에 검수를 완료한다.\n", encoding="utf-8"
+    )
+    new.write_text(
+        "제4조(검수 및 지체상금)\n갑은 인도일로부터 30일 이내에 검수를 완료한다.\n"
+        "을이 인도 기일을 지키지 못한 경우 지체상금을 지급한다.\n",
+        encoding="utf-8",
+    )
+
+    comparisons = align_documents(load_document(old), load_document(new))
+    inspection = [c for c in comparisons if "검수" in c.heading]
+    assert len(inspection) == 1
+    assert inspection[0].status is ChangeStatus.MODIFIED
+
+
 def test_rules_flag_unlimited_liability(docs):
     before, after = docs
     comparisons = align_documents(before, after)
@@ -145,6 +164,54 @@ def test_detect_parties_handles_three_parties():
         'C사(이하 "병"이라 한다)는 다음과 같이 약정한다.'
     )
     assert [p.id for p in detect_parties(text)] == ["갑", "을", "병"]
+
+
+def test_parse_party_spec():
+    from contract_review_ai.parties import parse_party_spec
+
+    party = parse_party_spec("병=주식회사 사아자:연대보증인")
+    assert (party.id, party.alias, party.name, party.role) == (
+        "병", "병", "주식회사 사아자", "연대보증인"
+    )
+    assert parse_party_spec("정").alias == "정"
+
+
+def test_apply_overrides_adds_and_removes():
+    from contract_review_ai.parties import apply_overrides
+
+    detected = detect_parties(V1)
+    result = apply_overrides(detected, add=["병=주식회사 사아자:연대보증인"], remove=["갑"])
+    ids = [p.id for p in result]
+    assert "갑" not in ids
+    assert "병" in ids
+    assert next(p for p in result if p.id == "병").role == "연대보증인"
+
+
+def test_apply_overrides_enriches_existing_party():
+    from contract_review_ai.parties import apply_overrides
+
+    result = apply_overrides(detect_parties(V1), add=["을=라마바 주식회사:수급인"])
+    party = next(p for p in result if p.id == "을")
+    assert party.name == "라마바 주식회사"
+    assert party.role == "수급인"
+
+
+def test_review_honours_party_overrides(tmp_path):
+    before = tmp_path / "v1.txt"
+    after = tmp_path / "v2.txt"
+    before.write_text(V1, encoding="utf-8")
+    after.write_text(V2, encoding="utf-8")
+
+    result = review_contracts(
+        before,
+        after,
+        backend=OfflineBackend(),
+        progress=None,
+        remove_parties=["갑"],
+        add_parties=["병=주식회사 사아자:연대보증인"],
+    )
+    ids = [p.id for p in result.parties]
+    assert ids == ["을", "병"]
 
 
 def test_score_text_counts_obligation():

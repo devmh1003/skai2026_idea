@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from contract_review_ai.config import Settings  # noqa: E402
+from contract_review_ai.console import force_utf8  # noqa: E402
 from contract_review_ai.report import render_html, render_markdown  # noqa: E402
 from contract_review_ai.review import review_versions  # noqa: E402
 from contract_review_ai.versioning import VersionStore  # noqa: E402
@@ -25,6 +26,7 @@ SAMPLES = ROOT / "data" / "samples"
 
 
 def main() -> int:
+    force_utf8()
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", default="offline")
     parser.add_argument("--party", default="all")

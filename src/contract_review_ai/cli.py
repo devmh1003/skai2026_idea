@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 from .config import BACKENDS, DEFAULT_MODEL, Settings
+from .console import force_utf8
 from .models import RiskLevel
 from .report import render_html, render_markdown
 from .review import review_contracts, review_versions
@@ -54,6 +55,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="코멘트 관점. 당사자 약칭을 콤마로 구분하거나 all (예: --party 을 / --party all)",
     )
     review.add_argument(
+        "--add-party",
+        action="append",
+        default=[],
+        metavar="약칭[=상호][:역할]",
+        help="당사자 추가·보정. 반복 지정 가능 (예: --add-party '병=주식회사 사아자:연대보증인')",
+    )
+    review.add_argument(
+        "--remove-party",
+        action="append",
+        default=[],
+        metavar="약칭",
+        help="자동 인식된 당사자 제외. 반복 지정 가능 (예: --remove-party 병)",
+    )
+    review.add_argument(
         "--min-level",
         choices=list(_LEVELS),
         default="info",
@@ -83,6 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    force_utf8()
     argv = list(sys.argv[1:] if argv is None else argv)
     # `contract-review a.hwpx b.hwpx` 처럼 서브커맨드를 생략해도 review로 본다.
     if argv and argv[0] not in _SUBCOMMANDS and not argv[0].startswith("-"):
@@ -127,6 +143,8 @@ def _cmd_review(args, store: VersionStore) -> int:
         "views": views,
         "min_level": _LEVELS[args.min_level],
         "progress": progress,
+        "add_parties": args.add_party,
+        "remove_parties": args.remove_party,
     }
 
     try:
@@ -147,7 +165,7 @@ def _cmd_review(args, store: VersionStore) -> int:
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"{result.before_doc.name}__vs__{result.after_doc.name}"
+    stem = f"{result.before_doc.name}__vs__{result.after_doc.name}".replace(" ", "_")
     written: list[Path] = []
 
     renderers = {

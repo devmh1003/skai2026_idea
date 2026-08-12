@@ -81,6 +81,58 @@ def merge_parties(*groups: list[Party]) -> list[Party]:
     return sorted(merged.values(), key=lambda p: _order(p.alias))
 
 
+def parse_party_spec(spec: str) -> Party:
+    """`약칭[=정식명칭][:역할]` 문자열을 Party로 바꾼다.
+
+        "병"                              → 약칭만
+        "병=주식회사 사아자"               → 상호까지
+        "병=주식회사 사아자:연대보증인"     → 역할까지
+    """
+    spec = spec.strip()
+    if not spec:
+        raise ValueError("당사자 표기가 비어 있습니다.")
+
+    head, _, role = spec.partition(":")
+    alias, _, name = head.partition("=")
+    alias = alias.strip()
+    if not alias:
+        raise ValueError(f"약칭을 읽을 수 없습니다: {spec!r}")
+
+    return Party(
+        id=alias,
+        alias=alias,
+        name=name.strip(),
+        role=role.strip() or _guess_role(alias, name.strip()),
+    )
+
+
+def apply_overrides(
+    parties: list[Party],
+    add: list[str] | None = None,
+    remove: list[str] | None = None,
+) -> list[Party]:
+    """자동 인식 결과에 사용자의 추가·삭제 지시를 반영한다.
+
+    자동 인식은 정의 문언이 없는 계약서(별지 합의서, 각서 등)에서 당사자를
+    놓치거나, 반대로 예시 문구를 당사자로 잘못 잡을 수 있다. 최종 판단은
+    사용자가 하도록 남긴다.
+    """
+    dropped = {name.strip() for name in (remove or []) if name.strip()}
+    result = [p for p in parties if p.id not in dropped and p.alias not in dropped]
+
+    for spec in add or []:
+        party = parse_party_spec(spec)
+        existing = next((p for p in result if p.id == party.id), None)
+        if existing is None:
+            result.append(party)
+            continue
+        # 이미 인식된 당사자면 사용자가 준 정보로 덮어쓴다.
+        existing.name = party.name or existing.name
+        existing.role = party.role or existing.role
+
+    return sorted(result, key=lambda p: _order(p.alias))
+
+
 def _name_before(text: str, position: int) -> str:
     """정의 문언 바로 앞의 상호를 잘라낸다."""
     head = text[max(0, position - 60) : position]

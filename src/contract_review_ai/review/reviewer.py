@@ -16,7 +16,7 @@ from ..llm.base import ClauseContext, CommentBackend
 from ..llm.factory import create_backend
 from ..models import ChangeStatus, Party, ReviewResult, RiskLevel
 from ..parsing import load_document
-from ..parties import analyze_impacts, merge_parties
+from ..parties import analyze_impacts, apply_overrides, merge_parties
 from ..risk import analyze_comparison
 from ..versioning import VersionStore, build_timeline
 
@@ -35,6 +35,8 @@ def review_contracts(
     min_level: RiskLevel = RiskLevel.INFO,
     backend: CommentBackend | None = None,
     progress: ProgressFn | None = _default_progress,
+    add_parties: list[str] | None = None,
+    remove_parties: list[str] | None = None,
     contract_id: str = "",
     store: VersionStore | None = None,
     before_version: str = "",
@@ -55,7 +57,11 @@ def review_contracts(
 
     before_doc = load_document(before_path, name=Path(before_path).stem, version=before_version)
     after_doc = load_document(after_path, name=Path(after_path).stem, version=after_version)
-    parties = merge_parties(before_doc.parties, after_doc.parties)
+    parties = apply_overrides(
+        merge_parties(before_doc.parties, after_doc.parties),
+        add=add_parties,
+        remove=remove_parties,
+    )
     say(
         f"조문 추출: {before_doc.name} {len(before_doc.clauses)}건 / "
         f"{after_doc.name} {len(after_doc.clauses)}건"

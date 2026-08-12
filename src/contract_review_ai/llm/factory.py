@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 from ..config import Settings
@@ -18,14 +19,30 @@ def create_backend(settings: Settings) -> CommentBackend:
         from .local_ax import LocalAXBackend
 
         return LocalAXBackend(settings)
+    if choice == "pipeline":
+        from .local_ax import PipelineAXBackend
+
+        return PipelineAXBackend(settings)
     if choice == "hf_api":
         from .hf_api import HFApiBackend
 
         return HFApiBackend(settings)
+    if choice == "adot_biz":
+        from .adot_biz import AdotBizBackend
+
+        return AdotBizBackend(settings)
     if choice != "auto":
         raise ValueError(f"알 수 없는 백엔드: {choice}")
 
     # auto — 사용할 수 있는 것 중 가장 좋은 것으로 내려간다.
+    if os.getenv("ADOT_BIZ_BASE_URL") and os.getenv("ADOT_BIZ_API_KEY"):
+        try:
+            from .adot_biz import AdotBizBackend
+
+            return AdotBizBackend(settings)
+        except Exception as exc:
+            _warn(f"A.Biz 백엔드 사용 불가 → {exc}")
+
     if _has_local_stack():
         try:
             from .local_ax import LocalAXBackend

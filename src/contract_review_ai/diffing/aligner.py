@@ -24,10 +24,27 @@ TITLE_MATCH_BONUS = 0.15
 """
 
 
+def _title_score(before: str, after: str) -> float:
+    """제목 유사도. 한쪽이 다른 쪽을 통째로 포함하면 같은 조문으로 본다.
+
+    '검수' → '검수 및 지체상금'처럼 조문에 항목을 덧붙이며 제목을 확장하는 개정이
+    흔한데, 문자 n-gram 코사인만 쓰면 짧은 제목 쪽 점수가 크게 깎여 삭제+신설로
+    갈라진다.
+    """
+    if not before or not after:
+        return 0.0
+    if before in after or after in before:
+        return 1.0
+    return similarity(before, after)
+
+
 def pair_score(before: Clause, after: Clause) -> float:
     body = similarity(before.body, after.body)
     same_title = bool(before.title) and before.title == after.title
-    title = similarity(before.title, after.title) if (before.title or after.title) else body
+    if before.title or after.title:
+        title = _title_score(before.title, after.title)
+    else:
+        title = body
 
     score = BODY_WEIGHT * body + TITLE_WEIGHT * title
     if before.number == after.number:
