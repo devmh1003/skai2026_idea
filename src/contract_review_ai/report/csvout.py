@@ -17,7 +17,7 @@ CLAUSE_HEADER = [
     "구간",
     "조문",
     "구분",
-    "위험도",
+    "쟁점 수",
     "유사도",
     "쟁점",
     "불리 당사자",
@@ -39,18 +39,18 @@ def render_csv(result: ReviewResult, contract_id: str = "") -> str:
     writer.writerow(CLAUSE_HEADER)
 
     span = f"{result.before_doc.name} → {result.after_doc.name}"
-    for comp in sorted(result.changed(), key=lambda c: (-c.effective_level.rank, c.sort_key)):
+    for comp in sorted(result.changed(), key=lambda c: (-len(c.flags), c.sort_key)):
         base = [
             contract_id or result.contract_id,
             span,
             comp.heading,
             comp.status.label,
-            comp.effective_level.label,
+            len(comp.flags),
             f"{comp.similarity:.2f}",
             ", ".join(comp.categories),
             ", ".join(i.alias for i in comp.impacts if i.verdict == "adverse" and i.mentioned),
             ", ".join(i.alias for i in comp.impacts if i.verdict == "favorable" and i.mentioned),
-            " / ".join(f"[{f.level.label}] {f.message}" for f in comp.flags),
+            " / ".join(f"{f.category}: {f.message}" for f in comp.flags),
             comp.before.full_text if comp.before else "",
             comp.after.full_text if comp.after else "",
         ]
@@ -75,7 +75,7 @@ def render_contract_index_csv(rows: list[dict]) -> str:
     """워크스페이스 전체 계약 목록."""
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
-    writer.writerow(["계약 ID", "계약명", "분류", "버전 수", "최신 버전", "고위험", "최종 등록"])
+    writer.writerow(["계약 ID", "계약명", "분류", "버전 수", "최신 버전", "쟁점", "최종 등록"])
     for row in rows:
         writer.writerow(
             [

@@ -36,7 +36,16 @@ _LEVELS = {
     "low": RiskLevel.LOW,
     "info": RiskLevel.INFO,
 }
-_SUBCOMMANDS = {"review", "version", "history", "rules", "workspace", "new", "attach"}
+_SUBCOMMANDS = {
+    "review",
+    "version",
+    "history",
+    "rules",
+    "workspace",
+    "new",
+    "attach",
+    "serve",
+}
 FORMATS = ("md", "html", "json", "csv")
 
 
@@ -157,6 +166,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     portal.add_argument("-q", "--quiet", action="store_true")
 
+    serve_cmd = sub.add_parser("serve", help="브라우저에서 업로드·내려받기까지 되는 로컬 서버")
+    serve_cmd.add_argument("--host", default="127.0.0.1")
+    serve_cmd.add_argument("--port", type=int, default=8000)
+    serve_cmd.add_argument("--backend", choices=BACKENDS, default=None)
+    serve_cmd.add_argument("--model", default=None)
+    serve_cmd.add_argument("--party", default="", help="코멘트 관점 (약칭 콤마 구분 또는 all)")
+    serve_cmd.add_argument("--min-level", choices=list(_LEVELS), default="medium")
+    serve_cmd.add_argument("--pairs", choices=("adjacent", "all", "latest"), default="adjacent")
+    serve_cmd.add_argument("--rules", action="append", default=[])
+    serve_cmd.add_argument("--disable-rule", action="append", default=[])
+
     rules = sub.add_parser("rules", help="쟁점 룰 조회·내보내기")
     rules_sub = rules.add_subparsers(dest="rules_command", required=True)
 
@@ -192,6 +212,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_workspace(args, store)
     if args.command in ("new", "attach"):
         return _cmd_attach(args, store)
+    if args.command == "serve":
+        return _cmd_serve(args, store)
     if args.command == "review":
         return _cmd_review(args, store)
 
@@ -519,6 +541,30 @@ def _safe_name(text: str) -> str:
     import re
 
     return re.sub(r'[\/:*?"<>|]+', "_", text).replace(" ", "_")
+
+
+# ---------------------------------------------------------------- serve
+
+
+def _cmd_serve(args, store: VersionStore) -> int:
+    from .serve import ServerConfig, serve
+
+    settings = Settings.from_env()
+    if args.backend:
+        settings.backend = args.backend
+    if args.model:
+        settings.model = args.model
+
+    config = ServerConfig(
+        store=store,
+        settings=settings,
+        views=[v.strip() for v in args.party.split(",") if v.strip()],
+        min_level=_LEVELS[args.min_level],
+        pairs=args.pairs,
+        rule_files=args.rules,
+        disable_rules=args.disable_rule,
+    )
+    return serve(config, host=args.host, port=args.port)
 
 
 # ---------------------------------------------------------------- rules

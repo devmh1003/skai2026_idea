@@ -271,6 +271,9 @@ class TimelineStep:
     deleted: int
     high: int
     medium: int
+    flagged: int = 0
+    """쟁점 신호가 붙은 조문 수."""
+
     headings: list[str] = field(default_factory=list)
 
     @property
@@ -362,6 +365,7 @@ class ReviewResult:
                     "deleted": t.deleted,
                     "high": t.high,
                     "medium": t.medium,
+                    "flagged": t.flagged,
                     "headings": t.headings,
                 }
                 for t in self.timeline

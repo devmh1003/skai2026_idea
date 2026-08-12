@@ -41,6 +41,7 @@ def build_timeline(store: VersionStore, contract_id: str, max_headings: int = 6)
                 deleted=sum(1 for c in changed if c.status is ChangeStatus.DELETED),
                 high=sum(1 for c in changed if c.rule_level is RiskLevel.HIGH),
                 medium=sum(1 for c in changed if c.rule_level is RiskLevel.MEDIUM),
+                flagged=sum(1 for c in changed if c.flags),
                 headings=[c.heading for c in risky[:max_headings]],
             )
         )

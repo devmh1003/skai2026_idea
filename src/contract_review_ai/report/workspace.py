@@ -23,6 +23,7 @@ from .html import JS as PANEL_JS
 from .html import render_result_panel
 
 BRAND = "CLAUSA"
+USER_NAME = "김민형"
 TAGLINE = "Contract Intelligence"
 
 _CSS = """
@@ -129,6 +130,15 @@ border-bottom:1px solid var(--line);font-size:13px}
 .sec h3{font-size:14px;font-weight:600;margin:0 0 10px}
 .sec .hint{font-size:12.5px;color:var(--muted);margin:0 0 10px}
 .filters{display:flex;gap:6px;flex-wrap:wrap}
+.upload-card .card{padding:14px 16px}
+.upload-card input[type="file"]{color:var(--muted)}
+.upstate{font-size:12.5px;margin-top:10px;display:none}
+.upstate[data-on="1"]{display:block}
+.upstate.ok{color:var(--ok)}
+.upstate.err{color:var(--high)}
+.upstate code{display:block;margin-top:6px;font-family:ui-monospace,Consolas,monospace;
+font-size:11.5px;background:#f7f8fa;border:1px solid var(--line);border-radius:6px;
+padding:7px 10px;color:var(--ink-2);white-space:pre-wrap;word-break:break-all}
 .filters .chip{padding:5px 12px}
 
 /* ── 당사자 관리 ───────────────────────────────────── */
@@ -478,6 +488,91 @@ _APP_JS = """
     });
   });
 
+  // ── 업로드 / 내려받기 ─────────────────────────────
+  var live = location.protocol === 'http:' || location.protocol === 'https:';
+
+  function q(params){
+    return Object.keys(params)
+      .filter(function(k){ return params[k]; })
+      .map(function(k){ return k + '=' + encodeURIComponent(params[k]); })
+      .join('&');
+  }
+
+  document.querySelectorAll('[data-dl]').forEach(function(btn){
+    btn.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      var params = {
+        contract: btn.dataset.contract,
+        from: btn.dataset.from || 'first',
+        to: btn.dataset.to || 'latest',
+        format: btn.dataset.dl
+      };
+      if (live) { window.location = '/api/download?' + q(params); return; }
+      alert('내려받기는 서버 모드에서 동작합니다. 터미널에서 contract-review serve 를 실행하십시오. '
+            + '또는 contract-review review --contract ' + params.contract
+            + ' --from ' + params.from + ' --to ' + params.to
+            + ' --format ' + params.format);
+    });
+  });
+
+  document.querySelectorAll('[data-export]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      if (live) { window.location = '/api/export?kind=' + btn.dataset.export; return; }
+      alert('대장 내려받기는 서버 모드에서 동작합니다. '
+            + '터미널에서 contract-review workspace --export csv 를 실행하십시오.');
+    });
+  });
+
+  document.querySelectorAll('[data-uploader]').forEach(function(box){
+    var state = box.querySelector('[data-upstate]');
+    function say(kind, message, command){
+      state.className = 'upstate ' + kind;
+      state.dataset.on = '1';
+      state.textContent = message;
+      if (command) {
+        var code = document.createElement('code');
+        code.textContent = command;
+        state.appendChild(code);
+      }
+    }
+
+    box.querySelector('[data-act="upload"]').addEventListener('click', function(){
+      var get = function(name){
+        var el = box.querySelector('[data-up="' + name + '"]');
+        return el ? el.value.trim() : '';
+      };
+      var input = box.querySelector('[data-up="files"]');
+      var contractId = get('contract_id');
+      if (!contractId) { say('err', '계약 ID를 입력하십시오.'); return; }
+      if (!input.files.length) { say('err', '올릴 파일을 선택하십시오.'); return; }
+
+      var names = Array.prototype.map.call(input.files, function(f){ return f.name; });
+      if (!live) {
+        say('err', '업로드는 서버 모드에서 동작합니다. 아래 명령으로 같은 작업을 할 수 있습니다.',
+            'contract-review attach ' + contractId + ' ' + names.join(' '));
+        return;
+      }
+
+      var form = new FormData();
+      form.append('contract_id', contractId);
+      ['title','category','labels','note'].forEach(function(f){
+        if (get(f)) form.append(f, get(f));
+      });
+      Array.prototype.forEach.call(input.files, function(f){ form.append('files', f); });
+
+      say('', '업로드 중…');
+      fetch('/api/upload', {method:'POST', body: form})
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+          if (!res.ok) { say('err', res.error || '업로드에 실패했습니다.'); return; }
+          var added = res.added.map(function(a){ return a.version + ' ' + a.label; }).join(', ');
+          say('ok', added + ' 등록됨. 검토를 다시 계산합니다…');
+          setTimeout(function(){ location.reload(); }, 700);
+        })
+        .catch(function(err){ say('err', String(err)); });
+    });
+  });
+
   goDashboard();
 })();
 """
@@ -499,12 +594,18 @@ class ContractEntry:
         return self.title or self.contract_id
 
     @property
-    def high(self) -> int:
-        return sum(r.risk_counts()["high"] for r in self.results)
+    def flagged(self) -> int:
+        """쟁점 신호가 붙은 조문 수(비교본 전체 합계)."""
+        return sum(1 for r in self.results for c in r.changed() if c.flags)
 
     @property
-    def medium(self) -> int:
-        return sum(r.risk_counts()["medium"] for r in self.results)
+    def issues(self) -> int:
+        return sum(len(c.flags) for r in self.results for c in r.changed())
+
+    # 이전 이름 — 호출부 정리 전까지 유지
+    @property
+    def high(self) -> int:
+        return self.flagged
 
     @property
     def latest(self) -> str:
@@ -525,7 +626,7 @@ class ContractEntry:
 def render_workspace(entries: list[ContractEntry]) -> str:
     categories = sorted({e.category for e in entries})
     total_versions = sum(len(e.versions) for e in entries)
-    total_high = sum(e.high for e in entries)
+    total_high = sum(e.flagged for e in entries)
     total_changes = sum(step.total for e in entries for step in e.timeline)
 
     return f"""<!DOCTYPE html>
@@ -548,18 +649,18 @@ def render_workspace(entries: list[ContractEntry]) -> str:
   <button data-goto="contracts"><span>계약</span><span class="cnt">{len(entries)}</span></button>
   <div class="grp">현황</div>
   <button disabled style="opacity:.45;cursor:default">
-    <span>고위험 조문</span><span class="cnt">{total_high}</span></button>
+    <span>검토 대상 조문</span><span class="cnt">{total_high}</span></button>
   <button disabled style="opacity:.45;cursor:default">
     <span>등록 버전</span><span class="cnt">{total_versions}</span></button>
   <div class="foot">
-    분석 엔진<br>{_e(_engine_label(entries))}
+    계약 {len(entries)}건 · 버전 {total_versions}개<br>마지막 분석 {_e(_last_run(entries))}
   </div>
 </aside>
 
 <div class="main">
 <div class="topbar">
   <div class="path js-path"></div>
-  <div class="who"><span>법무팀</span><div class="av">LG</div></div>
+  <div class="who"><span>{_e(USER_NAME)}</span><div class="av">{_e(USER_NAME[:1])}</div></div>
 </div>
 
 <div class="view" data-app-view="dashboard">
@@ -596,7 +697,7 @@ def _dashboard(entries, total_versions: int, total_high: int, total_changes: int
         ("관리 계약", len(entries), f"분류 {len({e.category for e in entries})}종", ""),
         ("등록 버전", total_versions, f"협상 진행 {negotiating}건", ""),
         ("누적 변경 조문", total_changes, "버전 간 합계", ""),
-        ("고위험 조문", total_high, "즉시 검토 필요", "high"),
+        ("검토 대상 조문", total_high, "쟁점 신호 탐지", "high"),
     ]
     kpi_html = "".join(
         f'<div class="kpi"><div class="k">{_e(k)}</div>'
@@ -625,7 +726,7 @@ def _dashboard(entries, total_versions: int, total_high: int, total_changes: int
         f'<div class="it"><div class="when">{_e(when[:10])}</div>'
         f'<div class="what"><b>{_e(entry.label)}</b> · {_e(record.version)} {_e(record.label)}'
         f'<div class="meta">수정 {step.modified} · 신설 {step.added} · 삭제 {step.deleted}'
-        + (f' · <span style="color:var(--high)">고위험 {step.high}</span>' if step.high else "")
+        + (f" · 쟁점 {step.flagged}" if step.flagged else "")
         + (f" — {_e(record.note)}" if record.note else "")
         + "</div></div></div>"
         for when, entry, record, step in activity[:8]
@@ -633,6 +734,10 @@ def _dashboard(entries, total_versions: int, total_high: int, total_changes: int
 
     return f"""<div class="vhead">
   <div><h2>대시보드</h2><p>계약 포트폴리오와 최근 개정 활동을 한눈에 확인합니다.</p></div>
+  <div class="right">
+    <button class="mini" data-export="contracts">계약대장 CSV</button>
+    <button class="mini" data-export="versions">버전대장 CSV</button>
+  </div>
 </div>
 <div class="kpis">{kpi_html}</div>
 <div class="panels">
@@ -663,7 +768,7 @@ def _contracts_view(entries, categories: list[str]) -> str:
         f'<td class="num">{len(e.versions)}</td>'
         f'<td><span class="badge latest">{_e(e.latest)}</span></td>'
         f'<td class="num">'
-        + (f'<span class="badge high">{e.high}</span>' if e.high else '<span class="ev">–</span>')
+        + (f'<span class="badge">{e.flagged}</span>' if e.flagged else '<span class="ev">–</span>')
         + "</td>"
         f'<td class="mono">{_e(e.updated_at[:16])}</td></tr>'
         for e in entries
@@ -680,9 +785,10 @@ def _contracts_view(entries, categories: list[str]) -> str:
   </div>
 </div>
 <div class="filters" style="margin-bottom:14px">{chips}</div>
+{_uploader()}
 <div class="tbl"><table>
 <thead><tr><th>계약</th><th>분류</th><th style="text-align:right">버전</th><th>최신</th>
-<th style="text-align:right">고위험</th><th>최종 등록</th></tr></thead>
+<th style="text-align:right">쟁점</th><th>최종 등록</th></tr></thead>
 <tbody>{rows}</tbody></table></div>"""
 
 
@@ -706,7 +812,7 @@ def _detail_view(entry: ContractEntry, index: int) -> str:
         f'<div class="it"><div class="when">{_e(step.from_version)} → {_e(step.to_version)}</div>'
         f'<div class="what"><b>수정 {step.modified} · 신설 {step.added} · '
         f"삭제 {step.deleted}</b>"
-        + (f' <span class="badge high">고위험 {step.high}</span>' if step.high else "")
+        + (f' <span class="badge">쟁점 {step.flagged}</span>' if step.flagged else "")
         + (
             f'<div class="meta">{", ".join(_e(h) for h in step.headings)}</div>'
             if step.headings
@@ -723,17 +829,24 @@ def _detail_view(entry: ContractEntry, index: int) -> str:
         f'data-open-row="1" style="cursor:pointer">'
         f'<td><div class="name">{_e(result.before_doc.name)} → '
         f"{_e(result.after_doc.name)}</div>"
-        f'<div class="sub">{_e(result.backend)} · 당사자 {len(result.parties)}인</div></td>'
+        f'<div class="sub">당사자 {len(result.parties)}인</div></td>'
         f'<td class="num">{result.counts()["modified"]}</td>'
         f'<td class="num">{result.counts()["added"]}</td>'
         f'<td class="num">{result.counts()["deleted"]}</td>'
         f'<td class="num">'
         + (
-            f'<span class="badge high">{result.risk_counts()["high"]}</span>'
-            if result.risk_counts()["high"]
+            f'<span class="badge">{sum(1 for c in result.changed() if c.flags)}</span>'
+            if any(c.flags for c in result.changed())
             else '<span class="ev">–</span>'
         )
-        + "</td></tr>"
+        + "</td>"
+        + f'<td style="text-align:right;white-space:nowrap">'
+        f'<button class="mini" data-dl="csv" data-contract="{_e(entry.contract_id)}" '
+        f'data-from="{_e(result.before_doc.version)}" data-to="{_e(result.after_doc.version)}">'
+        "CSV</button> "
+        f'<button class="mini" data-dl="md" data-contract="{_e(entry.contract_id)}" '
+        f'data-from="{_e(result.before_doc.version)}" data-to="{_e(result.after_doc.version)}">'
+        "MD</button></td></tr>"
         for order, result in enumerate(entry.results)
     ) or '<tr><td colspan="5" class="ev">검토된 비교본이 없습니다.</td></tr>'
 
@@ -748,9 +861,13 @@ def _detail_view(entry: ContractEntry, index: int) -> str:
     · 당사자 {parties}</p>
   </div>
   <div class="right">
+    <button class="mini" data-dl="csv" data-contract="{_e(entry.contract_id)}">CSV</button>
+    <button class="mini" data-dl="md" data-contract="{_e(entry.contract_id)}">Markdown</button>
+    <button class="mini" data-dl="html" data-contract="{_e(entry.contract_id)}">HTML</button>
+    <button class="mini" data-dl="json" data-contract="{_e(entry.contract_id)}">JSON</button>
     <span class="badge">버전 {len(entry.versions)}</span>
-    {f'<span class="badge high">고위험 {entry.high}</span>' if entry.high else ""}
-    {f'<span class="badge medium">중위험 {entry.medium}</span>' if entry.medium else ""}
+    {f'<span class="badge">검토 대상 {entry.flagged}</span>' if entry.flagged else ""}
+    {f'<span class="badge">쟁점 {entry.issues}</span>' if entry.issues else ""}
   </div>
 </div>
 
@@ -761,6 +878,8 @@ def _detail_view(entry: ContractEntry, index: int) -> str:
   <thead><tr><th>버전</th><th>라벨</th><th>등록 일시</th><th>해시</th></tr></thead>
   <tbody>{version_rows}</tbody></table></div>
 </div>
+
+{_uploader(entry)}
 
 {roster}
 
@@ -775,9 +894,49 @@ def _detail_view(entry: ContractEntry, index: int) -> str:
   <div class="tbl"><table>
   <thead><tr><th>비교 구간</th><th style="text-align:right">수정</th>
   <th style="text-align:right">신설</th><th style="text-align:right">삭제</th>
-  <th style="text-align:right">고위험</th></tr></thead>
+  <th style="text-align:right">쟁점</th><th style="text-align:right">내려받기</th></tr></thead>
   <tbody>{comparison_rows}</tbody></table></div>
 </div>
+</div>"""
+
+
+def _uploader(entry: ContractEntry | None = None) -> str:
+    """계약서 업로드 카드.
+
+    서버 모드(`contract-review serve`)에서는 실제로 파일이 저장되고 버전이 등록된다.
+    파일을 그냥 열었을 때는 저장할 곳이 없으므로, 같은 입력으로 실행할 CLI 명령을
+    만들어 준다 — 되는 척하지 않는다.
+    """
+    if entry is None:
+        head = "계약 등록"
+        hint = "새 계약을 만들거나 기존 계약에 원본을 올립니다. hwpx·hwp·docx·pdf·txt 지원."
+        id_field = '<input data-up="contract_id" placeholder="계약 ID (예: 2026-용역-007)">'
+        meta = (
+            '<input data-up="title" placeholder="계약명">'
+            '<input data-up="category" placeholder="분류 (예: 용역·도급)">'
+        )
+    else:
+        head = "버전 추가"
+        hint = "협상 회차마다 받은 수정본을 올리면 다음 버전으로 등록됩니다."
+        id_field = (
+            f'<input data-up="contract_id" value="{_e(entry.contract_id)}" readonly '
+            'style="background:#f7f8fa">'
+        )
+        meta = '<input data-up="labels" placeholder="버전 라벨 (예: 상대방 2차)">'
+
+    return f"""<div class="sec upload-card" data-uploader>
+  <h3>{head}</h3>
+  <p class="hint">{hint}</p>
+  <div class="card">
+    <div class="addrow" style="border:0;margin:0;padding:0">
+      {id_field}
+      {meta}
+      <input type="file" data-up="files" multiple
+        style="flex:2 1 240px;font-size:12.5px;padding:6px 0">
+      <button class="mini primary" data-act="upload">올리기</button>
+    </div>
+    <div class="upstate" data-upstate></div>
+  </div>
 </div>"""
 
 
@@ -868,11 +1027,9 @@ def _result_panels(entries: list[ContractEntry]) -> list[str]:
     return panels
 
 
-def _engine_label(entries: list[ContractEntry]) -> str:
-    for entry in entries:
-        for result in entry.results:
-            return result.backend
-    return "미실행"
+def _last_run(entries: list[ContractEntry]) -> str:
+    stamps = [r.generated_at for e in entries for r in e.results if r.generated_at]
+    return max(stamps)[:16] if stamps else "-"
 
 
 def _e(text: str) -> str:

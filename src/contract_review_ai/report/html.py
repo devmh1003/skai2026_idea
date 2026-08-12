@@ -18,12 +18,6 @@ from .. import DISCLAIMER
 from ..diffing import sentence_changes
 from ..models import ClauseComparison, DiffSegment, ReviewResult
 
-_RISK_COLOR = {
-    "high": "#b42318",
-    "medium": "#b54708",
-    "low": "#5d6b82",
-    "info": "#98a2b3",
-}
 _VERDICT_COLOR = {"adverse": "#b42318", "favorable": "#087443", "neutral": "#98a2b3"}
 
 _SENTENCE_SPLIT = re.compile(r"[^.。]*[.。]?")
@@ -139,9 +133,7 @@ section[hidden]{display:none}
 /* 조문 */
 .clause{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line-2);
 border-radius:10px;padding:18px 22px;margin-bottom:10px;box-shadow:var(--shadow)}
-.clause[data-risk="high"]{border-left-color:var(--high)}
-.clause[data-risk="medium"]{border-left-color:var(--medium)}
-.clause[data-risk="low"]{border-left-color:var(--line-2)}
+.clause[data-flagged="1"]{border-left-color:var(--accent)}
 .chead{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
 .chead h3{margin:0;font-size:15px;font-weight:600;flex:1 1 auto;letter-spacing:-.01em}
 .tag{font-size:11.5px;font-weight:500;padding:2px 9px;border-radius:5px;background:#f2f4f7;
@@ -246,13 +238,13 @@ JS = """
 
     var list = panel.querySelector('.clause-list');
     if (!list) return;
-    var state = {risk:'all', status:'all', party:'all', cat:'all', q:''};
+    var state = {flagged:'all', status:'all', party:'all', cat:'all', q:''};
     var shown = panel.querySelector('.js-shown');
 
     function refresh(){
       var n = 0;
       list.querySelectorAll('.clause').forEach(function(el){
-        var ok = (state.risk === 'all' || el.dataset.risk === state.risk)
+        var ok = (state.flagged === 'all' || el.dataset.flagged === state.flagged)
           && (state.status === 'all' || el.dataset.status === state.status)
           && (state.party === 'all' || (el.dataset.adverse||'').split('|').indexOf(state.party) >= 0)
           && (state.cat === 'all' || (el.dataset.cats||'').split('|').indexOf(state.cat) >= 0)
@@ -332,7 +324,7 @@ def render_html(result: ReviewResult) -> str:
 
 def render_result_panel(result: ReviewResult) -> str:
     """검토 결과 한 건의 본문. 포털에서도 그대로 재사용한다."""
-    changed = sorted(result.changed(), key=lambda c: (-c.effective_level.rank, c.sort_key))
+    changed = sorted(result.changed(), key=lambda c: (-len(c.flags), c.sort_key))
     clauses = "".join(_clause_html(c) for c in changed) or (
         '<div class="empty">변경된 조문이 없습니다.</div>'
     )
@@ -365,49 +357,28 @@ def render_result_panel(result: ReviewResult) -> str:
 
 def _summary(result: ReviewResult) -> str:
     counts = result.counts()
-    risks = result.risk_counts()
     total = counts["modified"] + counts["added"] + counts["deleted"]
 
+    flagged = sum(1 for c in result.changed() if c.flags)
+    issues = sum(len(c.flags) for c in result.changed())
     stats = [
-        ("", "변경", total, ""),
-        ("", "수정", counts["modified"], ""),
-        ("", "신설", counts["added"], ""),
-        ("", "삭제", counts["deleted"], ""),
-        ("high", "고위험", risks["high"], ""),
-        ("medium", "중위험", risks["medium"], ""),
+        ("변경 조문", total),
+        ("수정", counts["modified"]),
+        ("신설", counts["added"]),
+        ("삭제", counts["deleted"]),
+        ("검토 필요", flagged),
+        ("쟁점 신호", issues),
     ]
     chips = "".join(
-        f'<span class="stat {cls}"><b>{value}</b>{_e(label)}</span>'
-        for cls, label, value, _ in stats
+        f"<span class='stat'><b>{value}</b>{_e(label)}</span>" for label, value in stats
     )
-    return f'<div class="summary">{chips}<span class="spark">{_risk_bar(risks)}</span></div>'
-
-
-def _risk_bar(risks: dict[str, int]) -> str:
-    """위험도 구성을 한 줄 막대로. 도넛보다 자리를 훨씬 덜 먹는다."""
-    total = sum(risks.values())
-    if total == 0:
-        return ""
-
-    x = 0.0
-    segments = []
-    for key in ("high", "medium", "low", "info"):
-        value = risks[key]
-        if not value:
-            continue
-        width = 168 * value / total
-        segments.append(
-            f'<rect x="{x:.1f}" y="0" width="{max(width - 2, 2):.1f}" height="10" rx="5" '
-            f'fill="{_RISK_COLOR[key]}"><title>{key} {value}건</title></rect>'
-        )
-        x += width
-    return f'<svg width="168" height="10" viewBox="0 0 168 10">{"".join(segments)}</svg>'
+    return f'<div class="summary">{chips}</div>'
 
 
 # ---------------------------------------------------------------- 조문 대비 탭
 
 
-_LABEL = {"risk": "위험도", "status": "구분", "party": "당사자", "cat": "쟁점"}
+_LABEL = {"flagged": "검토", "status": "구분", "party": "당사자", "cat": "쟁점"}
 
 
 def _toolbar(result: ReviewResult) -> str:
@@ -446,7 +417,7 @@ def _toolbar(result: ReviewResult) -> str:
   <span class="ev">흐린 글씨는 변경되지 않은 부분입니다.</span>
 </div>
 <div class="toolbar">
-{chips("risk", [("high", "높음"), ("medium", "중간"), ("low", "낮음")])}
+{chips("flagged", [("1", "쟁점 있음"), ("0", "쟁점 없음")])}
 {chips("status", [("modified", "수정"), ("added", "신설"), ("deleted", "삭제")])}
 </div>
 <div class="toolbar">{chips("party", party_options)}</div>
@@ -454,7 +425,6 @@ def _toolbar(result: ReviewResult) -> str:
 
 
 def _clause_html(comp: ClauseComparison) -> str:
-    level = comp.effective_level
     adverse = [i for i in comp.impacts if i.verdict == "adverse" and i.mentioned]
     favorable = [i for i in comp.impacts if i.verdict == "favorable" and i.mentioned]
 
@@ -472,13 +442,13 @@ def _clause_html(comp: ClauseComparison) -> str:
     ).lower()
 
     parts = [
-        f'<div class="clause" data-risk="{level.value}" data-status="{comp.status.value}"'
+        f'<div class="clause" data-flagged="{"1" if comp.flags else "0"}"'
+        f' data-status="{comp.status.value}"'
         f' data-adverse="{_e("|".join(i.party_id for i in adverse))}"'
         f' data-cats="{_e("|".join(comp.categories))}"'
         f' data-search="{_e(search_blob)}">',
         '<div class="chead">',
         f"<h3>{_e(comp.heading)}</h3>",
-        f'<span class="tag {level.value}">위험도 {_e(level.label)}</span>',
         f'<span class="tag">{_e(comp.status.label)}</span>',
     ]
     parts += [
@@ -505,8 +475,7 @@ def _clause_html(comp: ClauseComparison) -> str:
 
     if comp.flags:
         items = "".join(
-            f'<li><span class="tag {f.level.value}">{_e(f.level.label)}</span> '
-            f"<b>{_e(f.category)}</b> {_e(f.message)}"
+            f"<li><b>{_e(f.category)}</b> {_e(f.message)}"
             + (f'<div class="ev">근거: {_e(f.evidence)}</div>' if f.evidence else "")
             + "</li>"
             for f in comp.flags
@@ -633,8 +602,8 @@ def _diff_html(
 
 def _comment_html(comment) -> str:
     body = [
-        f'<details open><summary>법무 코멘트 · {_e(comment.party_view or "중립")} '
-        f'<span class="ev">({_e(comment.source)})</span></summary>'
+        f'<details open><summary>법무 코멘트 · {_e(comment.party_view or "중립")}'
+        "</summary>"
     ]
     if comment.summary:
         body.append(f"<p>{_e(comment.summary)}</p>")
@@ -688,8 +657,7 @@ def _party_tab(result: ReviewResult, changed: list[ClauseComparison]) -> str:
                 f"{_e(impact.verdict_label)} {sign}</span></td>"
             )
         rows.append(
-            f'<tr><td><span class="tag {comp.effective_level.value}">'
-            f"{_e(comp.effective_level.label)}</span> {_e(comp.heading)}</td>"
+            f"<tr><td>{_e(comp.heading)}</td>"
             f'<td class="c ev">{_e(comp.status.label)}</td>{"".join(cells)}</tr>'
         )
 
@@ -741,8 +709,7 @@ def _party_bars(result: ReviewResult) -> str:
             f'<td><svg width="240" height="14" viewBox="0 0 240 14">{"".join(segments)}</svg></td>'
             f'<td class="ev">불리 {row["adverse"]} · 중립 {row["neutral"]} · '
             f'유리 {row["favorable"]}'
-            + (f' · <b style="color:{_RISK_COLOR["high"]}">고위험 불리 {row["high"]}</b>'
-               if row["high"] else "")
+            + (f" · <b>중점 검토 {row['high']}</b>" if row["high"] else "")
             + "</td></tr>"
         )
     return f"<table>{''.join(rows)}</table>"
@@ -765,8 +732,7 @@ def _history_tab(result: ReviewResult) -> str:
             f'<span class="tag">수정 {step.modified}</span>'
             f'<span class="tag">신설 {step.added}</span>'
             f'<span class="tag">삭제 {step.deleted}</span>'
-            + (f'<span class="tag high">고위험 {step.high}</span>' if step.high else "")
-            + (f'<span class="tag medium">중위험 {step.medium}</span>' if step.medium else "")
+            + (f'<span class="tag">쟁점 {step.flagged}</span>' if step.flagged else "")
         )
         headings = (
             '<div class="ev" style="margin-top:5px">주요 변경: '

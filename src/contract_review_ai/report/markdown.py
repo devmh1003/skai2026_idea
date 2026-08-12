@@ -3,21 +3,14 @@
 from __future__ import annotations
 
 from .. import DISCLAIMER
-from ..models import ClauseComparison, LegalComment, ReviewResult, RiskLevel
+from ..models import ClauseComparison, LegalComment, ReviewResult
 
-_LEVEL_MARK = {
-    RiskLevel.HIGH: "🔴 높음",
-    RiskLevel.MEDIUM: "🟠 중간",
-    RiskLevel.LOW: "🟡 낮음",
-    RiskLevel.INFO: "⚪ 참고",
-}
 _VERDICT_MARK = {"adverse": "▼ 불리", "favorable": "▲ 유리", "neutral": "– 중립"}
 
 
 def render_markdown(result: ReviewResult) -> str:
     counts = result.counts()
-    risks = result.risk_counts()
-    changed = sorted(result.changed(), key=lambda c: (-c.effective_level.rank, c.sort_key))
+    changed = sorted(result.changed(), key=lambda c: (-len(c.flags), c.sort_key))
 
     versions = ""
     if result.before_doc.version or result.after_doc.version:
@@ -30,7 +23,6 @@ def render_markdown(result: ReviewResult) -> str:
         f"- 개정본: `{result.after_doc.path}`{versions}",
         f"- 당사자: {', '.join(p.display() for p in result.parties) or '인식 실패'}",
         f"- 생성 시각: {result.generated_at}",
-        f"- 코멘트 생성: {result.backend}",
         "",
         f"> {DISCLAIMER}",
         "",
@@ -40,10 +32,6 @@ def render_markdown(result: ReviewResult) -> str:
         "|---|---|---|---|---|",
         f"| 건수 | {counts['modified']} | {counts['added']} | {counts['deleted']} "
         f"| {counts['unchanged']} |",
-        "",
-        "| 위험도 | 🔴 높음 | 🟠 중간 | 🟡 낮음 | ⚪ 참고 |",
-        "|---|---|---|---|---|",
-        f"| 건수 | {risks['high']} | {risks['medium']} | {risks['low']} | {risks['info']} |",
         "",
     ]
 
@@ -59,13 +47,13 @@ def render_markdown(result: ReviewResult) -> str:
     lines += [
         "## 변경 조문 목록",
         "",
-        "| 위험도 | 조문 | 구분 | 유사도 | 쟁점 | 불리 당사자 |",
-        "|---|---|---|---|---|---|",
+        "| 조문 | 구분 | 유사도 | 쟁점 | 불리 당사자 |",
+        "|---|---|---|---|---|",
     ]
     for comp in changed:
         adverse = ", ".join(i.alias for i in comp.impacts if i.verdict == "adverse" and i.mentioned)
         lines.append(
-            f"| {_LEVEL_MARK[comp.effective_level]} | {comp.heading} | {comp.status.label} "
+            f"| {comp.heading} | {comp.status.label} "
             f"| {comp.similarity:.2f} | {', '.join(comp.categories) or '-'} | {adverse or '-'} |"
         )
     lines += ["", "## 조문별 상세", ""]
@@ -79,7 +67,7 @@ def _party_summary(result: ReviewResult) -> list[str]:
     lines = [
         "## 당사자별 영향 (휴리스틱 추정)",
         "",
-        "| 당사자 | 불리 | 중립 | 유리 | 고위험 불리 |",
+        "| 당사자 | 불리 | 중립 | 유리 | 중점 검토 |",
         "|---|---|---|---|---|",
     ]
     for row in result.party_summary():
@@ -96,13 +84,13 @@ def _timeline(result: ReviewResult) -> list[str]:
     lines = [
         f"## 버전 변경 이력 — {result.contract_id}",
         "",
-        "| 구간 | 수정 | 신설 | 삭제 | 고위험 | 주요 변경 조문 |",
+        "| 구간 | 수정 | 신설 | 삭제 | 쟁점 | 주요 변경 조문 |",
         "|---|---|---|---|---|---|",
     ]
     for step in result.timeline:
         lines.append(
             f"| {step.from_version} → {step.to_version} | {step.modified} | {step.added} "
-            f"| {step.deleted} | {step.high} | {', '.join(step.headings) or '-'} |"
+            f"| {step.deleted} | {step.flagged} | {', '.join(step.headings) or '-'} |"
         )
     lines.append("")
     return lines
@@ -110,7 +98,7 @@ def _timeline(result: ReviewResult) -> list[str]:
 
 def _render_clause(comp: ClauseComparison) -> list[str]:
     lines = [
-        f"### {comp.heading} — {comp.status.label} ({_LEVEL_MARK[comp.effective_level]})",
+        f"### {comp.heading} — {comp.status.label}",
         "",
     ]
 
@@ -137,7 +125,7 @@ def _render_clause(comp: ClauseComparison) -> list[str]:
     if comp.flags:
         lines += ["**자동 탐지 위험 신호**", ""]
         for flag in comp.flags:
-            lines.append(f"- {_LEVEL_MARK[flag.level]} `{flag.category}` {flag.message}")
+            lines.append(f"- `{flag.category}` {flag.message}")
             if flag.evidence:
                 lines.append(f"  - 근거: {flag.evidence}")
         lines.append("")
@@ -151,7 +139,7 @@ def _render_clause(comp: ClauseComparison) -> list[str]:
 
 def _render_comment(comment: LegalComment) -> list[str]:
     lines = [
-        f"**법무 코멘트 · {comment.party_view or '중립'}** _(출처: {comment.source})_",
+        f"**법무 코멘트 · {comment.party_view or '중립'}**",
         "",
     ]
     if comment.summary:

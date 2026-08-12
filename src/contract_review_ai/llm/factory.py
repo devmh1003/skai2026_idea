@@ -59,10 +59,7 @@ def create_backend(settings: Settings) -> CommentBackend:
         except Exception as exc:
             _warn(f"HF API 백엔드 사용 불가 → {exc}")
 
-    _warn(
-        "LLM 백엔드가 없어 룰 기반 오프라인 코멘트로 실행합니다. "
-        "A.X 코멘트를 쓰려면 .env에 HF_TOKEN을 설정하십시오."
-    )
+    _warn("언어모델 연결이 없어 규정 검토 엔진으로 실행합니다.")
     return OfflineBackend()
 
 

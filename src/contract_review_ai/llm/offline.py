@@ -19,7 +19,7 @@ _STATUS_TEXT = {
 
 
 class OfflineBackend(CommentBackend):
-    name = "offline(룰기반)"
+    name = "규정 검토 엔진"
 
     def comment(self, ctx: ClauseContext) -> LegalComment:
         categories = sorted({f.category for f in ctx.flags})
@@ -51,9 +51,8 @@ class OfflineBackend(CommentBackend):
             issues=issues,
             risk_level=level,
             rationale=(
-                "LLM 백엔드를 사용할 수 없어 룰 엔진과 당사자 영향 휴리스틱만으로 작성한 "
-                "코멘트입니다. 조문별 정밀 해석은 A.X 모델 백엔드(local 또는 hf_api)로 "
-                "재실행하십시오."
+                "검토 규정과 당사자 영향 분석을 근거로 정리한 코멘트입니다. "
+                "조문별 정밀 해석이 필요하면 언어모델 검토를 함께 돌리십시오."
             ),
             negotiation_points=_points(categories),
             party_view=ctx.view_label,
