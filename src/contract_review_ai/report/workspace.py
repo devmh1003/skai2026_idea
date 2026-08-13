@@ -16,7 +16,7 @@ from __future__ import annotations
 import html as _html
 from dataclasses import dataclass, field
 
-from .. import DISCLAIMER
+from .. import DISCLAIMER, relations
 from ..deadlines import Deadline
 from ..models import ReviewResult, TimelineStep, VersionRecord
 from .checky import CSS as CHECKY_CSS
@@ -303,6 +303,38 @@ font-variant-numeric:tabular-nums;background:var(--chain);-webkit-background-cli
 .badge.ok{background:var(--ins);color:var(--ok)}
 .linkcell .arrow2{margin:0 6px;color:var(--accent)}
 .tbl tbody tr[data-open]{cursor:pointer}
+/* ── 계약 관계망 ───────────────────────────────────── */
+.rel-body{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap}
+.relmap{flex:1 1 520px;min-width:320px;height:auto;overflow:visible}
+.rel-side{flex:0 0 232px;min-width:200px}
+.rel-side .k{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+color:var(--muted);margin-bottom:8px}
+.rel-row{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;
+cursor:pointer;font-size:13px;transition:background .14s}
+.rel-row:hover{background:var(--accent-soft)}
+.rel-row b{font-weight:600;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;
+white-space:nowrap}
+.rel-row .ev{flex:0 0 auto;font-size:11.5px}
+.dotmini{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.rel-legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;padding-top:10px;
+border-top:1px solid var(--line);font-size:11.5px;color:var(--muted)}
+.rl{display:flex;align-items:center;gap:6px}
+.rl i{width:9px;height:9px;border-radius:3px;display:inline-block}
+.rl i.line{width:18px;height:0;border-top:2px solid var(--accent);border-radius:0}
+.rl i.line.dashed{border-top-style:dashed}
+
+.rel-edge{transition:opacity .18s,stroke-width .18s}
+.rel-node{cursor:pointer}
+.rel-node .dot{transition:r .18s,filter .18s}
+.rel-node .deg{font-size:11px;font-weight:700;fill:#fff;
+font-family:var(--sans);pointer-events:none}
+.rel-node .lab{font-size:11.5px;font-weight:600;fill:var(--ink-2);font-family:var(--sans);
+pointer-events:none;paint-order:stroke;stroke:#fff;stroke-width:3.5px;stroke-linejoin:round}
+.rel-node:hover .dot{filter:drop-shadow(0 4px 12px rgba(67,56,202,.45))}
+.relmap.focused .rel-edge{opacity:.12}
+.relmap.focused .rel-edge.on{opacity:1;stroke-width:3.4}
+.relmap.focused .rel-node{opacity:.28}
+.relmap.focused .rel-node.on{opacity:1}
 .vrow{cursor:pointer}
 .vrow:hover{background:#f8fafc}
 .vrow[aria-expanded="true"]{background:var(--accent-soft)}
@@ -505,6 +537,37 @@ _APP_JS = r"""
   document.querySelectorAll('[data-goto-view]').forEach(function(el){
     el.addEventListener('click', function(){
       (routes[el.dataset.gotoView] || goDashboard)();
+    });
+  });
+
+  // 관계망 — 노드에 올리면 그 계약과 이어진 것만 남긴다.
+  document.querySelectorAll('.relmap').forEach(function(map){
+    var nodes = map.querySelectorAll('.rel-node');
+    var edges = map.querySelectorAll('.rel-edge');
+
+    function focus(index){
+      map.classList.add('focused');
+      var neighbours = {};
+      neighbours[index] = true;
+      edges.forEach(function(edge){
+        var a = edge.dataset.a, b = edge.dataset.b;
+        var touches = (a === index || b === index);
+        edge.classList.toggle('on', touches);
+        if (touches) { neighbours[a] = true; neighbours[b] = true; }
+      });
+      nodes.forEach(function(node){
+        node.classList.toggle('on', !!neighbours[node.dataset.node]);
+      });
+    }
+    function clear(){
+      map.classList.remove('focused');
+      edges.forEach(function(e){ e.classList.remove('on'); });
+      nodes.forEach(function(n){ n.classList.remove('on'); });
+    }
+
+    nodes.forEach(function(node){
+      node.addEventListener('mouseenter', function(){ focus(node.dataset.node); });
+      node.addEventListener('mouseleave', clear);
     });
   });
 
@@ -1209,6 +1272,7 @@ def _dashboard(
 </div>
 {_status_board(entries)}
 <div class="kpis">{kpi_html}</div>
+{_relation_map(entries)}
 {_ledger_card(blocks, integrity, entries)}
 {_deadline_panel(entries)}
 <div class="panels">
@@ -1582,6 +1646,131 @@ def _chain_strip(blocks, limit: int = 12) -> str:
             f'<div class="chash">{_e(block.hash[:8])}</div></div>'
         )
     return f'<div class="chain">{"".join(cells)}</div>'
+
+
+CATEGORY_COLOR = {
+    "물품구매": "#4338CA",
+    "용역": "#0EA5E9",
+    "자문": "#7C3AED",
+    "연구개발": "#0891B2",
+    "라이선스": "#DB2777",
+}
+_FALLBACK_COLOR = "#64748B"
+
+
+def _relation_map(entries: list[ContractEntry]) -> str:
+    """계약 관계망.
+
+    계약은 한 건씩 떨어져 있는 것처럼 보이지만, 같은 상대방과 여러 건을 맺고 있거나
+    같은 쟁점이 여러 계약에 흩어져 있는 경우가 많다. 그런 계약은 함께 대응하는 편이
+    낫다는 것을 한눈에 보이게 한다.
+
+    좌표는 서버에서 스프링 모형으로 계산해 박아 넣는다. 브라우저에서 물리를 돌리지
+    않으므로 열 때마다 그림이 흔들리지 않는다.
+    """
+    graph = relations.build(entries)
+    if len(graph.nodes) < 2:
+        return ""
+
+    width, height = 780, 470
+    points = relations.layout(graph, width, height)
+    by_id = {e.contract_id: e for e in entries}
+
+    # 간선 — 조직 공유는 굵고 이어진 선, 쟁점 공유는 가늘고 점선
+    edges = []
+    for index, link in enumerate(graph.links):
+        (x1, y1), (x2, y2) = points[link.source], points[link.target]
+        # 살짝 휘어야 여러 간선이 겹쳐도 구분된다
+        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+        dx, dy = x2 - x1, y2 - y1
+        cx, cy = mx - dy * 0.09, my + dx * 0.09
+        strong = link.kind == "org"
+        thickness = 1.1 + link.weight * (0.9 if strong else 0.4)
+        dash = "" if strong else ' stroke-dasharray="5 5"'
+        tip = (
+            f"{graph.nodes[link.source].label} ↔ {graph.nodes[link.target].label}"
+            f" · {link.label}"
+        )
+        edges.append(
+            f'<path class="rel-edge {link.kind}" d="M{x1},{y1} Q{cx},{cy} {x2},{y2}" '
+            f'data-edge="{index}" data-a="{link.source}" data-b="{link.target}" '
+            f'stroke="url(#relGrad)" stroke-width="{thickness:.1f}" fill="none"{dash}>'
+            f"<title>{_e(tip)}</title></path>"
+        )
+
+    # 노드 — 크기는 연결 수, 색은 분류
+    nodes = []
+    for index, node in enumerate(graph.nodes):
+        x, y = points[index]
+        degree = graph.degree(index)
+        radius = 13 + min(degree, 6) * 2.4
+        color = CATEGORY_COLOR.get(node.category, _FALLBACK_COLOR)
+        entry = by_id.get(node.contract_id)
+        versions = len(entry.versions) if entry else 0
+        label = node.label if len(node.label) <= 12 else node.label[:11] + "…"
+
+        nodes.append(
+            f'<g class="rel-node" data-node="{index}" data-open="{_e(node.contract_id)}" '
+            f'data-title="{_e(node.label)}" transform="translate({x},{y})">'
+            f'<circle class="halo" r="{radius + 9}" fill="{color}" opacity="0.10"/>'
+            f'<circle class="dot" r="{radius}" fill="{color}" />'
+            f'<circle class="ring" r="{radius}" fill="none" stroke="#fff" stroke-width="2.5"/>'
+            f'<text class="deg" text-anchor="middle" dy="4">{versions}</text>'
+            f'<text class="lab" y="{radius + 17}" text-anchor="middle">{_e(label)}</text>'
+            f"<title>{_e(node.label)} · {_e(node.category)} · 버전 {versions} · "
+            f"연결 {degree}</title></g>"
+        )
+
+    legend = "".join(
+        f'<span class="rl"><i style="background:{color}"></i>{_e(name)}</span>'
+        for name, color in CATEGORY_COLOR.items()
+        if any(n.category == name for n in graph.nodes)
+    )
+
+    # 가장 많이 얽힌 계약 — 그래프만으로는 순위가 눈에 안 들어온다
+    ranked = sorted(
+        ((graph.degree(i), n) for i, n in enumerate(graph.nodes)),
+        key=lambda pair: (-pair[0], pair[1].label),
+    )[:4]
+    top = "".join(
+        f'<div class="rel-row" data-open="{_e(node.contract_id)}" data-title="{_e(node.label)}">'
+        f'<span class="dotmini" style="background:'
+        f'{CATEGORY_COLOR.get(node.category, _FALLBACK_COLOR)}"></span>'
+        f"<b>{_e(node.label)}</b><span class=\"ev\">{degree}개 계약과 연결</span></div>"
+        for degree, node in ranked
+        if degree
+    ) or '<div class="ev">겹치는 계약이 없습니다.</div>'
+
+    return f"""<div class="card rel-card" style="margin-bottom:20px">
+  <h2>계약 관계망
+    <span class="badge">조직 공유 {len(graph.org_links)}</span>
+    <span class="badge">쟁점 공유 {len(graph.issue_links)}</span>
+  </h2>
+  <p class="hint" style="margin:-6px 0 10px">같은 조직이 당사자로 얽혔거나 같은 쟁점이
+  함께 잡힌 계약을 잇습니다. 원 크기는 버전 수, 색은 분류입니다.</p>
+  <div class="rel-body">
+    <svg class="relmap" viewBox="0 0 {width} {height}" role="img"
+      aria-label="계약 관계망">
+      <defs>
+        <linearGradient id="relGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#4338CA" stop-opacity=".55"/>
+          <stop offset="100%" stop-color="#0EA5E9" stop-opacity=".55"/>
+        </linearGradient>
+      </defs>
+      <g class="rel-edges">{"".join(edges)}</g>
+      <g class="rel-nodes">{"".join(nodes)}</g>
+    </svg>
+    <div class="rel-side">
+      <div class="k">가장 많이 얽힌 계약</div>
+      {top}
+      <div class="rel-legend">{legend}</div>
+      <div class="rel-legend">
+        <span class="rl"><i class="line solid"></i>조직 공유</span>
+        <span class="rl"><i class="line dashed"></i>쟁점 공유</span>
+      </div>
+    </div>
+  </div>
+</div>"""
 
 
 def _ledger_card(blocks, integrity, entries: list[ContractEntry]) -> str:
