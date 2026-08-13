@@ -40,42 +40,45 @@ TAGLINE = "계약 검토 도우미"
 
 _CSS = """
 /* ── 앱 셸 ────────────────────────────────────────── */
-body{background:var(--canvas)}
-.app{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
-@media(max-width:900px){
-  .app{grid-template-columns:1fr}
-  .side{padding:10px 12px}
-  .side .grp,.side .foot{display:none}
-  .brand{padding:2px 4px 10px}
-  .side .nav{display:flex;gap:6px;overflow-x:auto}
-  .side button{width:auto;flex:0 0 auto;white-space:nowrap;padding:7px 12px}
-  .topbar{padding:0 16px;min-height:50px}
-  .view{padding:18px 16px 60px}
-  .ck-buddy{display:none}
-}
-.side{background:linear-gradient(180deg,#FBFCFE,#F4F6FB);color:var(--ink-2);
-padding:20px 14px;border-right:1px solid var(--line)}
-.brand{display:flex;align-items:center;gap:10px;padding:4px 10px 22px}
-.brand .mark{width:30px;height:30px;border-radius:8px;background:#2563eb;color:#fff;
-display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
+/* 좌측 고정 사이드바는 폭이 좁아지면 자리를 잃는다. 상단 한 줄 탭은 어느 폭에서도
+   가로 스크롤로 흡수되므로 레이아웃이 무너지지 않는다. */
+.app{min-height:100vh}
+.appbar{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.88);
+backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);
+border-bottom:1px solid var(--line)}
+.appbar::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;
+background:var(--chain);opacity:.5}
+.appbar-inner{max-width:1320px;margin:0 auto;padding:0 24px;display:flex;align-items:center;
+gap:22px;min-height:62px}
+.brand{display:flex;align-items:center;gap:10px;flex:0 0 auto}
 .brand .name{font-size:15px;font-weight:700;letter-spacing:.06em;line-height:1.15;
 background:var(--chain);-webkit-background-clip:text;background-clip:text;color:transparent}
-.brand .tag{font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase}
-.side .grp{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
-padding:14px 10px 6px}
-.side button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;
-font:inherit;font-size:13.5px;text-align:left;padding:8px 10px;border:0;border-radius:7px;
-background:none;color:var(--ink-2);cursor:pointer;margin-bottom:2px}
-.side button:hover{background:var(--accent-soft);color:var(--accent)}
-.side button[aria-current="true"]{background:var(--accent-soft);color:var(--accent);
-font-weight:600}
-.side .cnt{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
-.side .foot{margin-top:22px;padding:12px 10px 0;border-top:1px solid var(--line);font-size:11px;
-color:var(--muted);line-height:1.6}
+.brand .tag{font-size:10px;color:var(--muted);letter-spacing:.08em}
+.brand .ck-face{flex:0 0 auto}
+
+.tabs{display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none;
+flex:1 1 auto;min-width:0}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{position:relative;font:inherit;font-size:13.5px;font-weight:500;white-space:nowrap;
+padding:19px 14px;border:0;background:none;color:var(--muted);cursor:pointer;
+display:inline-flex;align-items:center;gap:7px}
+.tabs button:hover{color:var(--ink)}
+.tabs button::after{content:"";position:absolute;left:10px;right:10px;bottom:0;height:2px;
+border-radius:2px;background:var(--chain);opacity:0;transition:opacity .16s}
+.tabs button[aria-current="true"]{color:var(--accent);font-weight:600}
+.tabs button[aria-current="true"]::after{opacity:1}
+.tabs .cnt{font-size:11px;font-weight:600;color:var(--muted);background:var(--raise,#f2f4f7);
+border-radius:999px;padding:1px 7px;font-variant-numeric:tabular-nums}
+.tabs button[aria-current="true"] .cnt{background:var(--accent-soft);color:var(--accent)}
+
+.appbar-right{display:flex;align-items:center;gap:12px;flex:0 0 auto}
+.appbar-right .who{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted)}
+.appbar-right .who .av{width:26px;height:26px;border-radius:50%;background:var(--chain);
+color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
 
 .main{min-width:0}
-.topbar{background:var(--surface);border-bottom:1px solid var(--line);padding:0 28px;
-display:flex;align-items:center;gap:14px;min-height:58px;position:sticky;top:0;z-index:5}
+.topbar{max-width:1320px;margin:0 auto;padding:12px 24px 0;display:flex;align-items:center;
+gap:14px;flex-wrap:wrap}
 .topbar .path{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:7px;
 flex-wrap:wrap}
 .topbar .path button{font:inherit;border:0;background:none;color:var(--accent);cursor:pointer;
@@ -83,16 +86,24 @@ padding:0;font-weight:500}
 .topbar .path button:hover{text-decoration:underline}
 .topbar .path .sep{color:var(--line-2)}
 .topbar .path b{font-weight:600;color:var(--ink)}
-.topbar .who{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:12.5px;
-color:var(--muted)}
-.topbar .who .av{width:26px;height:26px;border-radius:50%;background:var(--chain);color:#fff;
-display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
-.view{padding:26px 28px 72px;max-width:1180px}
+.shellinfo{margin-left:auto;font-size:11.5px;color:var(--muted)}
+
+.view{max-width:1320px;margin:0 auto;padding:18px 24px 120px}
 .view[hidden]{display:none}
 .vhead{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:20px}
 .vhead h2{font-size:20px;font-weight:600;margin:0;letter-spacing:-.02em}
 .vhead p{margin:2px 0 0;font-size:13px;color:var(--muted)}
 .vhead .right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+@media(max-width:900px){
+  .appbar-inner{gap:12px;padding:0 14px;flex-wrap:wrap;min-height:0;padding-top:10px}
+  .brand .tag{display:none}
+  .tabs{order:3;width:100%;flex-basis:100%;border-top:1px solid var(--line)}
+  .tabs button{padding:12px 11px}
+  .appbar-right{margin-left:auto}
+  .topbar,.view{padding-left:14px;padding-right:14px}
+  .ck-buddy{display:none}
+}
 
 /* ── 진행 단계 보드 ────────────────────────────────── */
 .statboard{margin-bottom:18px}
@@ -370,13 +381,12 @@ font-size:11.5px;color:#5a3d0c;background:#fdf1dc;padding:6px 9px;border-radius:
 white-space:pre-wrap;word-break:break-all}
 
 /* ── 시각 효과 ─────────────────────────────────────── */
-.side{position:relative}
-.side::after{content:"";position:absolute;top:0;right:-1px;width:2px;height:100%;
-background:linear-gradient(180deg,transparent,rgba(67,56,202,.35),transparent)}
+
+
 .brand .mark{background:var(--chain);box-shadow:0 6px 18px rgba(67,56,202,.45)}
 
-.side button{transition:background .16s,color .16s,transform .16s}
-.side button[aria-current="true"]{box-shadow:inset 2px 0 0 var(--accent)}
+
+
 .topbar{background:rgba(255,255,255,.82);backdrop-filter:saturate(180%) blur(12px);
 -webkit-backdrop-filter:saturate(180%) blur(12px)}
 .kpi{position:relative;overflow:hidden;transition:transform .16s,box-shadow .16s}
@@ -411,7 +421,7 @@ _APP_JS = r"""
   document.querySelectorAll('[data-app-view]').forEach(function(v){
     views[v.dataset.appView] = v;
   });
-  var navButtons = document.querySelectorAll('.side button[data-goto]');
+  var navButtons = document.querySelectorAll('.tabs button[data-goto]');
   var path = document.querySelector('.js-path');
   var switchedAt = 0;
 
@@ -1065,37 +1075,35 @@ def render_workspace(entries: list[ContractEntry], integrity=None, blocks=None) 
 <style>{BASE_CSS}{_CSS}{CHECKY_CSS}</style></head>
 <body>
 <div class="app">
-<aside class="side">
-  <div class="brand">
-    {brand_markup()}
-    <div>
-      <div class="name">{BRAND}</div>
-      <div class="tag">{TAGLINE}</div>
+<header class="appbar">
+  <div class="appbar-inner">
+    <div class="brand">
+      {brand_markup(30)}
+      <div>
+        <div class="name">{BRAND}</div>
+        <div class="tag">{TAGLINE}</div>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button data-goto="dashboard" aria-current="true">현황관리</button>
+      <button data-goto="contracts">계약상세<span class="cnt">{len(entries)}</span></button>
+      <button data-goto="create">계약생성</button>
+      <button data-goto="customers">고객관리<span class="cnt">{_party_total(entries)}</span></button>
+      <button data-goto="search">조항검색</button>
+      <button data-goto="ledger">원장<span class="cnt">{len(blocks)}</span></button>
+    </nav>
+    <div class="appbar-right">
+      {_integrity_pill(integrity, entries)}
+      <div class="who"><span>{_e(USER_NAME)}</span><div class="av">{_e(USER_NAME[:1])}</div></div>
     </div>
   </div>
-  <div class="grp">메뉴</div>
-  <div class="nav">
-  <button data-goto="dashboard" aria-current="true"><span>현황관리</span></button>
-  <button data-goto="contracts"><span>계약상세</span>
-    <span class="cnt">{len(entries)}</span></button>
-  <button data-goto="create"><span>계약생성</span></button>
-  <button data-goto="customers"><span>고객관리</span>
-    <span class="cnt">{_party_total(entries)}</span></button>
-  <button data-goto="search"><span>조항검색</span></button>
-  <button data-goto="ledger"><span>원장</span>
-    <span class="cnt">{len(blocks)}</span></button>
-  </div>
-  <div class="foot">
-    계약 {len(entries)}건 · 버전 {total_versions}개<br>마지막 분석 {_e(_last_run(entries))}
-    {_vault_badge(entries, integrity)}
-  </div>
-</aside>
+</header>
 
 <div class="main">
 <div class="topbar">
   <div class="path js-path"></div>
-  {_integrity_pill(integrity, entries)}
-  <div class="who"><span>{_e(USER_NAME)}</span><div class="av">{_e(USER_NAME[:1])}</div></div>
+  <div class="shellinfo">계약 {len(entries)}건 · 버전 {total_versions}개
+    {_vault_badge(entries, integrity)}</div>
 </div>
 
 <div class="view" data-app-view="dashboard">

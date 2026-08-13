@@ -96,15 +96,16 @@ height:calc(var(--size,140px)*.11);border-width:3px}
 height:calc(var(--size,140px)*.22)}
 .ck-face.sm.scanning .ck-eyes i{height:calc(var(--size,140px)*.055)}
 
-/* ── 왼편을 오가는 동반자 ─────────────────────────── */
-/* 본문은 오른쪽에 있으므로 화면 왼쪽 띠 안에서만 움직인다. */
-.ck-buddy{position:fixed;left:14px;bottom:22px;z-index:40;display:flex;
-flex-direction:column;align-items:flex-start;gap:8px;width:200px;
+/* ── 오른쪽 아래에 머무는 동반자 ───────────────────── */
+/* 상단 탭으로 바뀌면서 왼쪽 아래도 본문 자리가 됐다. 손이 가장 덜 가는
+   오른쪽 아래 구석에 두고, 말풍선은 오른쪽 끝을 기준으로 편다. */
+.ck-buddy{position:fixed;right:18px;bottom:18px;z-index:40;display:flex;
+flex-direction:column;align-items:flex-end;gap:8px;width:230px;
 transition:transform 2.6s cubic-bezier(.4,0,.2,1);pointer-events:none}
 .ck-buddy>*{pointer-events:auto}
 .ck-buddy .ck-face{cursor:pointer;filter:drop-shadow(0 8px 18px rgba(23,25,28,.28))}
 .ck-bubble{max-width:200px;order:-1;background:#fff;border:1px solid var(--line);
-border-radius:14px 14px 14px 4px;
+border-radius:14px 14px 4px 14px;
 box-shadow:0 10px 28px rgba(23,25,28,.12);padding:11px 15px;font-size:13px;line-height:1.6;
 color:var(--ink);animation:ck-pop .28s cubic-bezier(.22,1,.36,1) both}
 .ck-bubble b{font-weight:700}
@@ -112,6 +113,7 @@ color:var(--ink);animation:ck-pop .28s cubic-bezier(.22,1,.36,1) both}
 .ck-bubble .ck-close{float:right;margin:-2px -6px 0 8px;border:0;background:none;cursor:pointer;
 color:#98a2b3;font-size:14px;line-height:1}
 @media print{.ck-buddy{display:none}}
+@media(max-width:900px){.ck-buddy{display:none}}
 
 /* 사이드바 브랜드 얼굴 */
 .brand .ck-face{flex:0 0 auto}
@@ -131,10 +133,14 @@ JS = r"""
   }
 
   // 상황별로 표정과 말이 함께 바뀐다. hold를 주면 그동안 산책 멘트가 끼어들지 않는다.
+  var fadeTimer = null;
   function say(message, state, hold){
     if (message) {
       text.innerHTML = message;
       bubble.hidden = false;
+      // 읽을 만큼만 두고 접는다. 계속 떠 있으면 본문을 가린다.
+      clearTimeout(fadeTimer);
+      fadeTimer = setTimeout(function(){ bubble.hidden = true; }, Math.max(hold || 0, 6000));
     }
     setState(state || 'idle');
     holdUntil = Date.now() + (hold || 0);
@@ -148,15 +154,12 @@ JS = r"""
     bubble.hidden = !bubble.hidden;
   });
 
-  // 본문을 가리지 않도록 화면 왼쪽 띠 안에서만 오간다.
-  var spots = [[0, 0], [26, -70], [6, -140], [30, -60]];
+  // 구석에서 아주 조금만 움직인다. 크게 돌아다니면 본문을 가린다.
+  var spots = [[0, 0], [-8, -14], [4, -6], [-4, -18]];
   var index = 0;
   function stroll(){
     index = (index + 1) % spots.length;
-    var limit = Math.max(window.innerHeight - 220, 0);
-    var move = spots[index];
-    var y = Math.max(move[1], -limit);
-    buddy.style.transform = 'translate(' + move[0] + 'px,' + y + 'px)';
+    buddy.style.transform = 'translate(' + spots[index][0] + 'px,' + spots[index][1] + 'px)';
   }
   stroll();
   setInterval(stroll, 9000);
