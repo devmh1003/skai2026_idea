@@ -244,6 +244,46 @@ box-shadow:var(--shadow);cursor:pointer}
 .hit-head .ev{margin-left:auto}
 .hit p{margin:8px 0 0;font-size:13px;line-height:1.7;color:var(--ink-2);white-space:pre-wrap}
 .hit mark{background:#fff3c4;border-radius:3px;padding:0 2px}
+/* ── 체인 표현 ─────────────────────────────────────── */
+.chainpill{display:flex;align-items:center;gap:7px;margin-left:auto;font:inherit;font-size:12px;
+padding:5px 12px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);
+cursor:pointer;color:var(--ink-2)}
+.chainpill:hover{border-color:var(--accent)}
+.chainpill b{font-weight:600}
+.chainpill .node{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.chainpill .link{width:10px;height:2px;background:var(--ok);opacity:.5}
+.chainpill.bad .node,.chainpill.bad .link{background:var(--high)}
+.chainpill .tip{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--muted)}
+.chainpill .lock{font-size:11px;color:var(--accent);background:var(--accent-soft);
+padding:1px 7px;border-radius:999px}
+.topbar .who{margin-left:14px}
+
+.step-link[data-result-open]{cursor:pointer;border-radius:8px;padding-left:8px;
+margin-left:-8px;transition:background .14s}
+.step-link[data-result-open]:hover{background:var(--accent-soft)}
+.step-link[data-result-open] .when{color:var(--accent);font-weight:600}
+.chain{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding:4px 0 2px}
+.cnode{position:relative;flex:0 0 auto;min-width:78px;padding:9px 11px;margin-right:18px;
+border:1px solid var(--line-2);border-radius:9px;background:var(--surface);text-align:center}
+.cnode:last-child{margin-right:0}
+.cnode::after{content:"";position:absolute;right:-18px;top:50%;width:18px;height:2px;
+background:linear-gradient(90deg,var(--line-2),var(--accent));transform:translateY(-50%)}
+.cnode:last-child::after{display:none}
+.cnode.more{display:flex;align-items:center;color:var(--muted);min-width:34px}
+.cidx{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.cver{font-size:12.5px;font-weight:600;margin:1px 0 2px}
+.chash{font-family:ui-monospace,Consolas,monospace;font-size:10.5px;color:var(--accent)}
+
+.ledger-card{border-left:3px solid var(--ok)}
+.ledger-card.bad{border-left-color:var(--high)}
+.ledger-grid{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+.ledger-grid .k{font-size:11.5px;color:var(--muted)}
+.ledger-grid .n{font-size:26px;font-weight:600;line-height:1.2;font-variant-numeric:tabular-nums}
+.ledger-grid .d{font-size:11.5px;color:var(--muted);margin-top:2px}
+.tipline{font-size:13px;margin-top:6px;color:var(--accent)}
+.badge.ok{background:var(--ins);color:var(--ok)}
+.linkcell .arrow2{margin:0 6px;color:var(--accent)}
+.tbl tbody tr[data-open]{cursor:pointer}
 .vrow{cursor:pointer}
 .vrow:hover{background:#f8fafc}
 .vrow[aria-expanded="true"]{background:var(--accent-soft)}
@@ -408,6 +448,7 @@ _APP_JS = r"""
   function goCreate(){ show('create'); crumbs([{label:'계약생성'}]); tell('create'); }
   function goCustomers(){ show('customers'); crumbs([{label:'고객관리'}]); tell('customers'); }
   function goSearch(){ show('search'); crumbs([{label:'조항검색'}]); tell('search'); }
+  function goLedger(){ show('ledger'); crumbs([{label:'원장'}]); tell('ledger'); }
 
   function goDetail(id, title){
     document.querySelectorAll('[data-detail]').forEach(function(el){
@@ -436,11 +477,18 @@ _APP_JS = r"""
     contracts: goContracts,
     create: goCreate,
     customers: goCustomers,
-    search: goSearch
+    search: goSearch,
+    ledger: goLedger
   };
   navButtons.forEach(function(btn){
     btn.addEventListener('click', function(){
       (routes[btn.dataset.goto] || goDashboard)();
+    });
+  });
+
+  document.querySelectorAll('[data-goto-view]').forEach(function(el){
+    el.addEventListener('click', function(){
+      (routes[el.dataset.gotoView] || goDashboard)();
     });
   });
 
@@ -925,6 +973,11 @@ class ContractEntry:
     timeline: list[TimelineStep] = field(default_factory=list)
     results: list[ReviewResult] = field(default_factory=list)
     deadline: Deadline = field(default_factory=Deadline)
+    chain: list = field(default_factory=list)
+    """이 계약의 원장 블록."""
+
+    encrypted: bool = False
+    """원본이 암호화돼 보관되는지."""
     texts: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
     """버전별 조문 원문 — {버전: [(조문 제목, 본문), …]}."""
 
@@ -989,7 +1042,9 @@ class ContractEntry:
         return []
 
 
-def render_workspace(entries: list[ContractEntry]) -> str:
+def render_workspace(entries: list[ContractEntry], integrity=None, blocks=None) -> str:
+    """integrity: ledger.Verification, blocks: 원장 블록 전체(원장 화면용)."""
+    blocks = blocks or []
     present = {e.category for e in entries}
     categories = [c for c in CATEGORY_ORDER if c in present]
     categories += sorted(present - set(CATEGORY_ORDER))
@@ -1021,20 +1076,24 @@ def render_workspace(entries: list[ContractEntry]) -> str:
   <button data-goto="customers"><span>고객관리</span>
     <span class="cnt">{_party_total(entries)}</span></button>
   <button data-goto="search"><span>조항검색</span></button>
+  <button data-goto="ledger"><span>원장</span>
+    <span class="cnt">{len(blocks)}</span></button>
   </div>
   <div class="foot">
     계약 {len(entries)}건 · 버전 {total_versions}개<br>마지막 분석 {_e(_last_run(entries))}
+    {_vault_badge(entries, integrity)}
   </div>
 </aside>
 
 <div class="main">
 <div class="topbar">
   <div class="path js-path"></div>
+  {_integrity_pill(integrity, entries)}
   <div class="who"><span>{_e(USER_NAME)}</span><div class="av">{_e(USER_NAME[:1])}</div></div>
 </div>
 
 <div class="view" data-app-view="dashboard">
-{_dashboard(entries, total_versions, total_high, total_changes)}
+{_dashboard(entries, total_versions, total_high, total_changes, blocks, integrity)}
 </div>
 
 <div class="view" data-app-view="contracts" hidden>
@@ -1051,6 +1110,10 @@ def render_workspace(entries: list[ContractEntry]) -> str:
 
 <div class="view" data-app-view="search" hidden>
 {_search_view(entries)}
+</div>
+
+<div class="view" data-app-view="ledger" hidden>
+{_ledger_view(blocks, integrity, entries)}
 </div>
 
 <div class="view" data-app-view="detail" hidden>
@@ -1075,7 +1138,14 @@ def render_workspace(entries: list[ContractEntry]) -> str:
 # ---------------------------------------------------------------- 대시보드
 
 
-def _dashboard(entries, total_versions: int, total_high: int, total_changes: int) -> str:
+def _dashboard(
+    entries,
+    total_versions: int,
+    total_high: int,
+    total_changes: int,
+    blocks=None,
+    integrity=None,
+) -> str:
     negotiating = sum(1 for e in entries if len(e.versions) > 1)
     kpis = [
         ("관리 계약", len(entries), f"분류 {len({e.category for e in entries})}종", ""),
@@ -1125,6 +1195,7 @@ def _dashboard(entries, total_versions: int, total_high: int, total_changes: int
 </div>
 {_status_board(entries)}
 <div class="kpis">{kpi_html}</div>
+{_ledger_card(blocks, integrity, entries)}
 {_deadline_panel(entries)}
 <div class="panels">
   <div class="card"><h2>최근 개정 활동</h2><div class="feed">{feed}</div></div>
@@ -1281,8 +1352,22 @@ def _detail_view(entry: ContractEntry, index: int) -> str:
         for record in entry.versions
     ) or '<tr><td colspan="5" class="ev">등록된 버전이 없습니다.</td></tr>'
 
+    # 타임라인 한 줄은 곧 하나의 비교본이다. 눌렀을 때 그 비교로 바로 가게 한다.
+    by_pair = {
+        (r.before_doc.version, r.after_doc.version): f"{index}-{order}"
+        for order, r in enumerate(entry.results)
+    }
     steps = "".join(
-        f'<div class="it"><div class="when">{_e(step.from_version)} → {_e(step.to_version)}</div>'
+        '<div class="it step-link"'
+        + (
+            f' data-result-open="{by_pair[(step.from_version, step.to_version)]}"'
+            f' data-contract="{_e(entry.contract_id)}"'
+            f' data-contract-title="{_e(entry.label)}"'
+            f' data-label="{_e(step.from_version)} → {_e(step.to_version)}"'
+            if (step.from_version, step.to_version) in by_pair
+            else ""
+        )
+        + f'><div class="when">{_e(step.from_version)} → {_e(step.to_version)}</div>'
         f'<div class="what"><b>수정 {step.modified} · 신설 {step.added} · '
         f"삭제 {step.deleted}</b>"
         + (f' <span class="badge">쟁점 {step.flagged}</span>' if step.flagged else "")
@@ -1350,6 +1435,8 @@ def _detail_view(entry: ContractEntry, index: int) -> str:
   <tbody>{version_rows}</tbody></table></div>
   {_version_docs(entry)}
 </div>
+
+{_chain_panel(entry)}
 
 {_meeting_panel(entry)}
 
@@ -1444,6 +1531,159 @@ def _meeting_panel(entry: ContractEntry) -> str:
     </div>
     <div class="proposals" data-proposals></div>
   </div>
+</div>"""
+
+
+def _integrity_pill(integrity, entries: list[ContractEntry]) -> str:
+    """상단바 무결성 표시 — 체인이 성립하는지 한눈에."""
+    if integrity is None:
+        return ""
+    sealed = any(e.encrypted for e in entries)
+    state = "ok" if integrity.ok else "bad"
+    label = f"체인 {integrity.length}블록" if integrity.ok else "체인 불일치"
+    return (
+        f'<button class="chainpill {state}" data-goto-view="ledger" title="원장 보기">'
+        f'<span class="node"></span><span class="link"></span><span class="node"></span>'
+        f"<b>{_e(label)}</b>"
+        + (f'<span class="tip">{_e(integrity.tip[:10])}…</span>' if integrity.ok else "")
+        + ("<span class='lock'>암호화</span>" if sealed else "")
+        + "</button>"
+    )
+
+
+def _chain_strip(blocks, limit: int = 12) -> str:
+    """블록을 이어 붙인 띠. 각 칸이 앞 칸의 해시를 물고 있다는 것을 보이게 한다."""
+    if not blocks:
+        return ""
+
+    shown = blocks[-limit:]
+    cells = []
+    if len(blocks) > limit:
+        cells.append('<div class="cnode more">…</div>')
+    for block in shown:
+        cells.append(
+            f'<div class="cnode" title="{_e(block.hash)}">'
+            f'<div class="cidx">#{block.index}</div>'
+            f'<div class="cver">{_e(block.version or block.kind)}</div>'
+            f'<div class="chash">{_e(block.hash[:8])}</div></div>'
+        )
+    return f'<div class="chain">{"".join(cells)}</div>'
+
+
+def _ledger_card(blocks, integrity, entries: list[ContractEntry]) -> str:
+    """현황관리 상단의 원장 요약."""
+    if integrity is None:
+        return ""
+
+    sealed = sum(1 for e in entries if e.encrypted)
+    state_class = "ok" if integrity.ok else "bad"
+    state_text = "무결성 확인" if integrity.ok else f"블록 {integrity.broken_at} 불일치"
+    return f"""<div class="card ledger-card {state_class}" style="margin-bottom:20px">
+  <h2>문서 원장
+    <span class="badge {"ok" if integrity.ok else "high"}">{_e(state_text)}</span>
+    {f'<span class="badge">암호화 보관 {sealed}건</span>' if sealed else ""}
+  </h2>
+  <div class="ledger-grid">
+    <div>
+      <div class="k">블록</div><div class="n">{integrity.length}</div>
+      <div class="d">등록·편집마다 1개</div>
+    </div>
+    <div>
+      <div class="k">체인 팁</div>
+      <div class="mono tipline">{_e(integrity.tip[:24])}…</div>
+      <div class="d">가장 최근 블록의 해시</div>
+    </div>
+    <div style="flex:1;min-width:220px">
+      <div class="k">최근 블록</div>
+      {_chain_strip(blocks, limit=8)}
+    </div>
+  </div>
+</div>"""
+
+
+def _ledger_view(blocks, integrity, entries: list[ContractEntry]) -> str:
+    """원장 전체 화면."""
+    if not blocks:
+        return """<div class="vhead"><div><h2>원장</h2>
+        <p>아직 기록된 블록이 없습니다.</p></div></div>"""
+
+    titles = {e.contract_id: e.label for e in entries}
+    rows = "".join(
+        f'<tr data-open="{_e(block.contract_id)}" '
+        f'data-title="{_e(titles.get(block.contract_id, block.contract_id))}">'
+        f'<td class="num mono">#{block.index}</td>'
+        f'<td class="mono">{_e(block.at[:16])}</td>'
+        f'<td><span class="badge">{_e(block.kind)}</span></td>'
+        f'<td><div class="name">{_e(titles.get(block.contract_id, block.contract_id))}</div>'
+        f'<div class="sub">{_e(block.contract_id)} · {_e(block.version)} {_e(block.label)}</div></td>'
+        f'<td class="mono">{_e(block.sha256[:12])}…</td>'
+        f'<td class="mono linkcell">{_e(block.prev[:8])}…<span class="arrow2">→</span>'
+        f"{_e(block.hash[:8])}…</td></tr>"
+        for block in reversed(blocks)
+    )
+
+    state = "무결성 확인" if integrity and integrity.ok else "불일치"
+    return f"""<div class="vhead">
+  <div><h2>원장</h2>
+    <p>등록·편집이 일어날 때마다 블록이 쌓입니다. 각 블록은 앞 블록의 해시를 품고 있어,
+    중간 기록을 고치면 뒤가 전부 어긋납니다.</p>
+  </div>
+  <div class="right">
+    <span class="badge {"ok" if integrity and integrity.ok else "high"}">{_e(state)}</span>
+    <span class="badge">블록 {len(blocks)}</span>
+  </div>
+</div>
+{_chain_strip(blocks, limit=14)}
+<div class="tbl" style="margin-top:14px"><table>
+<thead><tr><th>블록</th><th>기록 시각</th><th>종류</th><th>대상</th>
+<th>문서 해시</th><th>연결 (앞 → 이 블록)</th></tr></thead>
+<tbody>{rows}</tbody></table></div>"""
+
+
+def _vault_badge(entries: list[ContractEntry], integrity) -> str:
+    """사이드바 하단 보관 상태 — 암호화 여부와 원장 무결성."""
+    sealed = any(e.encrypted for e in entries)
+    lines = [
+        "<br>보관 " + ("암호화" if sealed else "평문"),
+    ]
+    if integrity is not None:
+        state = "무결성 확인" if integrity.ok else "불일치"
+        lines.append(f" · 원장 {integrity.length}블록 {state}")
+    return "".join(lines)
+
+
+def _chain_panel(entry: ContractEntry) -> str:
+    """계약별 등록 원장.
+
+    버전 표가 '무엇이 등록됐는지'를 보여준다면, 원장은 '그 기록 자체가 손대지
+    않았음'을 보여준다. 각 블록은 앞 블록의 해시를 품고 있어 중간을 고치면
+    뒤가 전부 어긋난다.
+    """
+    if not entry.chain:
+        return ""
+
+    rows = "".join(
+        f"<tr><td class='num'>#{block.index}</td>"
+        f'<td><span class="badge">{_e(block.version)}</span> {_e(block.label)}</td>'
+        f'<td class="mono">{_e(block.at[:16])}</td>'
+        f'<td class="mono">{_e(block.sha256[:12])}…</td>'
+        f'<td class="mono">{_e(block.prev[:8])}… → {_e(block.hash[:8])}…</td></tr>'
+        for block in entry.chain
+    )
+    seal = (
+        '<span class="badge ok">암호화 보관</span>'
+        if entry.encrypted
+        else '<span class="badge">평문 보관</span>'
+    )
+    return f"""<div class="sec">
+  <h3>등록 원장 {seal}</h3>
+  <p class="hint">등록·편집이 일어날 때마다 블록이 하나 붙고, 각 블록은 앞 블록의 해시를
+  품습니다. 중간 기록을 고치면 뒤 블록의 해시가 전부 어긋나 바로 드러납니다.</p>
+  {_chain_strip(entry.chain)}
+  <div class="tbl"><table>
+  <thead><tr><th>블록</th><th>버전</th><th>기록 시각</th><th>문서 해시</th>
+  <th>연결</th></tr></thead>
+  <tbody>{rows}</tbody></table></div>
 </div>"""
 
 

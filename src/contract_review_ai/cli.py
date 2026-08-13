@@ -45,6 +45,7 @@ _SUBCOMMANDS = {
     "new",
     "attach",
     "serve",
+    "ledger",
 }
 FORMATS = ("md", "html", "json", "csv")
 
@@ -177,6 +178,14 @@ def build_parser() -> argparse.ArgumentParser:
     serve_cmd.add_argument("--rules", action="append", default=[])
     serve_cmd.add_argument("--disable-rule", action="append", default=[])
 
+    ledger_cmd = sub.add_parser("ledger", help="문서 등록 원장 조회·검증")
+    ledger_sub = ledger_cmd.add_subparsers(dest="ledger_command", required=True)
+    ledger_verify = ledger_sub.add_parser("verify", help="체인 무결성 검증")
+    ledger_verify.add_argument("--file", default="", help="원장 경로 (기본: <store>/../ledger.jsonl)")
+    ledger_list = ledger_sub.add_parser("list", help="블록 목록")
+    ledger_list.add_argument("contract_id", nargs="?", default="")
+    ledger_list.add_argument("--file", default="")
+
     rules = sub.add_parser("rules", help="쟁점 룰 조회·내보내기")
     rules_sub = rules.add_subparsers(dest="rules_command", required=True)
 
@@ -208,6 +217,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_history(args, store)
     if args.command == "rules":
         return _cmd_rules(args)
+    if args.command == "ledger":
+        return _cmd_ledger(args, store)
     if args.command == "workspace":
         return _cmd_workspace(args, store)
     if args.command in ("new", "attach"):
@@ -424,6 +435,8 @@ def _cmd_workspace(args, store: VersionStore) -> int:
             versions=records,
             timeline=build_timeline(store, contract_id),
             status_override=store.status(contract_id),
+            chain=store.ledger.for_contract(contract_id),
+            encrypted=store.encrypted,
         )
         entry.texts = _load_version_texts(store, contract_id, records)
         entry.deadline = _load_deadline(store, contract_id, records)
@@ -456,7 +469,12 @@ def _cmd_workspace(args, store: VersionStore) -> int:
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "workspace.html"
-    path.write_text(render_workspace(contracts), encoding="utf-8")
+    path.write_text(
+        render_workspace(
+            contracts, integrity=store.ledger.verify(), blocks=store.ledger.blocks()
+        ),
+        encoding="utf-8",
+    )
 
     written = [path]
     if "csv" in {f.strip().lower() for f in args.export.split(",") if f.strip()}:
@@ -477,7 +495,8 @@ def _load_version_texts(store: VersionStore, contract_id: str, records) -> dict:
     texts: dict[str, list[tuple[str, str]]] = {}
     for record in records:
         try:
-            document = load_document(store.resolve(contract_id, record.version))
+            with store.open_version(contract_id, record.version) as path:
+                document = load_document(path)
         except (FileNotFoundError, ValueError, RuntimeError):
             continue
         texts[record.version] = [(c.heading, c.body) for c in document.clauses]
@@ -492,7 +511,8 @@ def _load_deadline(store: VersionStore, contract_id: str, records):
     if not records:
         return Deadline()
     try:
-        document = load_document(store.resolve(contract_id, records[-1].version))
+        with store.open_version(contract_id, records[-1].version) as path:
+            document = load_document(path)
     except (FileNotFoundError, ValueError, RuntimeError):
         return Deadline()
     return extract(document.clauses)
@@ -570,6 +590,35 @@ def _safe_name(text: str) -> str:
     import re
 
     return re.sub(r'[\/:*?"<>|]+', "_", text).replace(" ", "_")
+
+
+# ---------------------------------------------------------------- ledger
+
+
+def _cmd_ledger(args, store: VersionStore) -> int:
+    from .ledger import Ledger
+
+    ledger = Ledger(args.file) if args.file else store.ledger
+
+    if args.ledger_command == "verify":
+        result = ledger.verify()
+        print(f"원장: {ledger.path}")
+        print(f"블록 {result.length}개")
+        if result.ok:
+            print(f"무결성 확인 · 체인 팁 {result.tip[:16]}…")
+            return 0
+        print(f"[경고] 블록 {result.broken_at}에서 불일치 — {result.reason}", file=sys.stderr)
+        return 1
+
+    blocks = ledger.for_contract(args.contract_id) if args.contract_id else ledger.blocks()
+    if not blocks:
+        print("기록된 블록이 없습니다.")
+        return 0
+    for block in blocks:
+        print(f"#{block.index:<4} {block.at}  {block.kind:<10} "
+              f"{block.contract_id} {block.version} {block.label}")
+        print(f"      문서 {block.sha256[:16]}…  블록 {block.hash[:16]}…")
+    return 0
 
 
 # ---------------------------------------------------------------- serve

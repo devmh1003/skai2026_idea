@@ -118,6 +118,8 @@ def build_entries(config: ServerConfig, contract_ids: list[str] | None = None):
             versions=records,
             timeline=build_timeline(config.store, contract_id) if len(records) > 1 else [],
             status_override=config.store.status(contract_id),
+            chain=config.store.ledger.for_contract(contract_id),
+            encrypted=config.store.encrypted,
         )
         entry.texts = _load_texts(config.store, contract_id, records)
         entry.deadline = _load_deadline(config.store, contract_id, records)
@@ -160,7 +162,8 @@ def _load_texts(store: VersionStore, contract_id: str, records) -> dict:
     texts: dict[str, list[tuple[str, str]]] = {}
     for record in records:
         try:
-            document = load_document(store.resolve(contract_id, record.version))
+            with store.open_version(contract_id, record.version) as path:
+                document = load_document(path)
         except (FileNotFoundError, ValueError, RuntimeError):
             continue
         texts[record.version] = [(c.heading, c.body) for c in document.clauses]
@@ -175,7 +178,8 @@ def _load_deadline(store: VersionStore, contract_id: str, records):
     if not records:
         return Deadline()
     try:
-        document = load_document(store.resolve(contract_id, records[-1].version))
+        with store.open_version(contract_id, records[-1].version) as path:
+            document = load_document(path)
     except (FileNotFoundError, ValueError, RuntimeError):
         return Deadline()
     return extract(document.clauses)
@@ -265,7 +269,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path in ("/", "/index.html", "/workspace.html"):
             entries = build_entries(self.config)
-            self._send(render_workspace(entries).encode("utf-8"), "text/html; charset=utf-8")
+            ledger = self.config.store.ledger
+            page = render_workspace(
+                entries, integrity=ledger.verify(), blocks=ledger.blocks()
+            )
+            self._send(page.encode("utf-8"), "text/html; charset=utf-8")
             return
 
         if parsed.path == "/api/download":
@@ -486,7 +494,8 @@ class Handler(BaseHTTPRequestHandler):
         from .parsing import load_document
 
         try:
-            document = load_document(self.config.store.resolve(contract_id, version))
+            with self.config.store.open_version(contract_id, version) as path:
+                document = load_document(path)
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
             self._json({"ok": False, "error": str(exc)}, status=400)
             return
@@ -557,9 +566,7 @@ class Handler(BaseHTTPRequestHandler):
         # '중복 파일' 대신 '변경 없음'으로 알려 주는 편이 실제 상황에 맞다.
         if base:
             try:
-                current = self.config.store.resolve(contract_id, base).read_text(
-                    encoding="utf-8"
-                )
+                current = self.config.store.read_bytes(contract_id, base).decode("utf-8")
             except (FileNotFoundError, OSError, UnicodeDecodeError):
                 current = ""
             if current and "".join(current.split()) == "".join(text.split()):
@@ -620,7 +627,8 @@ def _dropped_clauses(store: VersionStore, contract_id: str, base: str, sent: int
     try:
         from .parsing import load_document
 
-        total = len(load_document(store.resolve(contract_id, base)).clauses)
+        with store.open_version(contract_id, base) as path:
+            total = len(load_document(path).clauses)
     except (FileNotFoundError, ValueError, RuntimeError):
         return 0
     return total if sent < total else 0

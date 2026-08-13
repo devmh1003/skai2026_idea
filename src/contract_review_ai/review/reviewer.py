@@ -133,25 +133,34 @@ def review_versions(
 ) -> ReviewResult:
     """버전 저장소에 등록된 두 버전을 비교한다."""
     store = store or VersionStore()
-    before_path = store.resolve(contract_id, before_spec)
-    after_path = store.resolve(contract_id, after_spec)
     records = {r.version: r for r in store.versions(contract_id)}
 
-    def _version_of(path: Path) -> str:
-        for version, record in records.items():
-            if record.file == path.name:
-                return version
-        return ""
+    def _version_of(spec: str) -> str:
+        key = spec.strip().lower()
+        if key in {"latest", "last", "head"}:
+            return list(records)[-1] if records else ""
+        if key in {"first", "base"}:
+            return next(iter(records), "")
+        wanted = key if key.startswith("v") else f"v{key}"
+        return next((v for v in records if v.lower() == wanted), "")
 
-    result = review_contracts(
-        before_path,
-        after_path,
-        contract_id=contract_id,
-        store=store,
-        before_version=_version_of(before_path),
-        after_version=_version_of(after_path),
-        **kwargs,
-    )
+    before_version = _version_of(before_spec)
+    after_version = _version_of(after_spec)
+
+    # 암호화된 저장소에서는 여기서만 잠깐 평문이 된다.
+    with (
+        store.open_version(contract_id, before_spec) as before_path,
+        store.open_version(contract_id, after_spec) as after_path,
+    ):
+        result = review_contracts(
+            before_path,
+            after_path,
+            contract_id=contract_id,
+            store=store,
+            before_version=before_version,
+            after_version=after_version,
+            **kwargs,
+        )
 
     # 저장소 파일명 대신 등록 당시의 라벨을 문서 이름으로 쓴다.
     for doc in (result.before_doc, result.after_doc):

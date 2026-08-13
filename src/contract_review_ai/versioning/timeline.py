@@ -13,16 +13,22 @@ from ..risk import analyze_comparison
 from .store import VersionStore
 
 
+def _load(store, contract_id: str, version: str):
+    """암호화 여부와 무관하게 문서를 읽는다."""
+    with store.open_version(contract_id, version) as path:
+        return load_document(path)
+
+
 def build_timeline(store: VersionStore, contract_id: str, max_headings: int = 6) -> list[TimelineStep]:
     records = store.versions(contract_id)
     if len(records) < 2:
         return []
 
     steps: list[TimelineStep] = []
-    previous = load_document(store.resolve(contract_id, records[0].version))
+    previous = _load(store, contract_id, records[0].version)
 
     for record in records[1:]:
-        current = load_document(store.resolve(contract_id, record.version))
+        current = _load(store, contract_id, record.version)
         comparisons = align_documents(previous, current)
         for comp in comparisons:
             comp.flags = analyze_comparison(comp)
