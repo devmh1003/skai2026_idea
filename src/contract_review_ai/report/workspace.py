@@ -714,25 +714,82 @@ _APP_JS = r"""
     });
   });
 
-  // 조항검색 — 계약을 가로질러 최신 조문에서 찾는다.
+  // 조항검색 — 계약을 가로질러 조문을 찾는다.
   var hits = document.querySelectorAll('.hit');
   var hitCount = document.querySelector('.js-hit-count');
   var searchEmpty = document.querySelector('.js-search-empty');
   var clauseSearch = document.querySelector('.js-clause-search');
+  var scope = 'latest';
+
   if (clauseSearch) {
-    clauseSearch.addEventListener('input', function(){
-      var q = clauseSearch.value.trim().toLowerCase();
-      var n = 0;
+    // 원문을 보관해 두고 강조할 때마다 여기서 다시 그린다.
+    hits.forEach(function(el){
+      var body = el.querySelector('p');
+      body.dataset.plain = body.textContent;
+    });
+
+    function highlight(el, terms){
+      var body = el.querySelector('p');
+      var text = body.dataset.plain;
+      if (!terms.length) { body.textContent = text; return; }
+      var pattern = terms.map(function(term){
+        return term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      }).join('|');
+      body.innerHTML = '';
+      var re = new RegExp(pattern, 'gi');
+      var last = 0, match;
+      while ((match = re.exec(text)) !== null) {
+        body.appendChild(document.createTextNode(text.slice(last, match.index)));
+        var mark = document.createElement('mark');
+        mark.textContent = match[0];
+        body.appendChild(mark);
+        last = match.index + match[0].length;
+        if (match[0] === '') re.lastIndex++;
+      }
+      body.appendChild(document.createTextNode(text.slice(last)));
+    }
+
+    function runSearch(){
+      // 띄어 쓴 단어는 모두 포함(AND)으로 본다. '국외 이전'이 '국외로 이전한'을
+      // 놓치던 문제를 없앤다.
+      var terms = clauseSearch.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      var enough = terms.join('').length >= 2;
+      var shown = 0, hiddenByScope = 0;
+
       hits.forEach(function(el){
-        var ok = q.length >= 2 && (el.dataset.search || '').indexOf(q) >= 0;
+        var blob = el.dataset.search || '';
+        var matched = enough && terms.every(function(term){ return blob.indexOf(term) >= 0; });
+        var inScope = scope === 'all' || el.dataset.latest === '1';
+        var ok = matched && inScope;
         el.hidden = !ok;
-        if (ok) n++;
+        if (ok) { shown++; highlight(el, terms); }
+        else if (matched && !inScope) hiddenByScope++;
       });
-      hitCount.textContent = n;
-      searchEmpty.textContent = q.length < 2
-        ? '두 글자 이상 입력하십시오.'
-        : (n ? '' : '일치하는 조문이 없습니다.');
-      searchEmpty.style.display = (q.length < 2 || !n) ? '' : 'none';
+
+      hitCount.textContent = shown;
+      if (!enough) {
+        searchEmpty.textContent =
+          '찾을 문구를 입력하십시오. 여러 단어를 띄어 쓰면 모두 포함된 조문을 찾습니다.';
+      } else if (shown) {
+        searchEmpty.textContent = '';
+      } else if (hiddenByScope) {
+        searchEmpty.textContent =
+          '최신 버전에는 없습니다. 이전 버전 포함으로 보면 ' + hiddenByScope + '건이 있습니다.';
+      } else {
+        searchEmpty.textContent = '일치하는 조문이 없습니다.';
+      }
+      searchEmpty.style.display = searchEmpty.textContent ? '' : 'none';
+    }
+
+    clauseSearch.addEventListener('input', runSearch);
+    document.querySelectorAll('.js-scope').forEach(function(chip){
+      chip.addEventListener('click', function(){
+        document.querySelectorAll('.js-scope').forEach(function(c){
+          c.setAttribute('aria-pressed', String(c === chip));
+        });
+        scope = chip.dataset.scope;
+        runSearch();
+      });
     });
   }
 
@@ -1464,33 +1521,49 @@ def _search_view(entries: list[ContractEntry]) -> str:
 
     "지체상금이 들어간 계약이 어디였더라"를 계약을 하나씩 열어 확인하던 일을
     한 번에 끝낸다. 조문 원문은 이미 페이지에 들어 있어 서버를 다시 부르지 않는다.
+
+    협상 과정에서 빠진 문언(위약벌처럼 상대방이 넣었다가 합의로 삭제된 조항)도
+    찾을 수 있어야 하므로 전 버전을 색인하되, 같은 문안이 여러 버전에 걸쳐 있으면
+    한 건으로 묶고 등장 구간만 표시한다.
     """
     cards = []
     for entry in entries:
         latest = entry.latest
-        for heading, body in entry.texts.get(latest, []):
-            blob = f"{entry.label} {heading} {body}".lower()
+        seen: dict[tuple[str, str], list[str]] = {}
+        for record in entry.versions:
+            for heading, body in entry.texts.get(record.version, []):
+                seen.setdefault((heading, body), []).append(record.version)
+
+        for (heading, body), versions in seen.items():
+            in_latest = latest in versions
+            span = versions[0] if len(versions) == 1 else f"{versions[0]}–{versions[-1]}"
+            blob = f"{entry.label} {entry.category} {heading} {body}".lower()
             cards.append(
-                f'<div class="hit" data-search="{_e(blob)}" '
-                f'data-open="{_e(entry.contract_id)}" data-title="{_e(entry.label)}" hidden>'
+                f'<div class="hit" data-search="{_e(blob)}" data-latest="{"1" if in_latest else "0"}"'
+                f' data-open="{_e(entry.contract_id)}" data-title="{_e(entry.label)}" hidden>'
                 f'<div class="hit-head"><b>{_e(heading)}</b>'
                 f'<span class="badge cat">{_e(entry.category)}</span>'
-                f'<span class="ev">{_e(entry.label)} · {_e(latest)}</span></div>'
-                f"<p>{_e(body)}</p></div>"
+                + ("" if in_latest else '<span class="badge medium">이전 버전</span>')
+                + f'<span class="ev">{_e(entry.label)} · {_e(span)}</span></div>'
+                f'<p>{_e(body)}</p></div>'
             )
 
+    latest_count = sum(1 for c in cards if 'data-latest="1"' in c)
     return f"""<div class="vhead">
   <div><h2>조항검색</h2>
-    <p>모든 계약의 최신 버전 조문에서 찾습니다. 총 {len(cards)}개 조문.</p>
+    <p>모든 계약의 조문에서 찾습니다. 최신 {latest_count}개 · 전체 {len(cards)}개 문안.</p>
   </div>
 </div>
 <div class="toolbar">
   <input class="js-clause-search" type="search"
     placeholder="예: 지체상금, 연대보증, 국외 이전, 위약벌">
+  <button class="chip js-scope" data-scope="latest" aria-pressed="true">최신 버전</button>
+  <button class="chip js-scope" data-scope="all" aria-pressed="false">이전 버전 포함</button>
   <span class="ev"><b class="js-hit-count">0</b>건</span>
 </div>
 <div class="hits">{"".join(cards)}</div>
-<div class="empty js-search-empty">찾을 문구를 입력하십시오.</div>"""
+<div class="empty js-search-empty">찾을 문구를 입력하십시오.
+여러 단어를 띄어 쓰면 모두 포함된 조문을 찾습니다.</div>"""
 
 
 def _party_total(entries: list[ContractEntry]) -> int:
