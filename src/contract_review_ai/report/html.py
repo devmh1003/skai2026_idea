@@ -33,8 +33,11 @@ CSS = """
   --muted:#667085;
   --line:#e4e7ec;
   --line-2:#d0d5dd;
-  --accent:#1849a9;
-  --accent-soft:#eef2f9;
+  --accent:#4338CA;
+  --accent-2:#0EA5E9;
+  --accent-soft:#EEF2FF;
+  --chain:linear-gradient(90deg,#4338CA,#0EA5E9);
+  --glow:0 0 0 1px rgba(67,56,202,.16), 0 10px 28px rgba(67,56,202,.12);
   --high:#b42318;
   --medium:#b54708;
   --ok:#087443;
@@ -45,8 +48,14 @@ CSS = """
          "Segoe UI",system-ui,sans-serif;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--canvas);color:var(--ink);font-family:var(--sans);
-font-size:14px;line-height:1.62;letter-spacing:-.006em;-webkit-font-smoothing:antialiased}
+body{margin:0;color:var(--ink);font-family:var(--sans);
+font-size:14px;line-height:1.62;letter-spacing:-.006em;-webkit-font-smoothing:antialiased;
+background:
+  radial-gradient(1100px 520px at 8% -8%, rgba(67,56,202,.055), transparent 62%),
+  radial-gradient(900px 460px at 100% 0%, rgba(14,165,233,.05), transparent 58%),
+  linear-gradient(rgba(16,24,40,.028) 1px, transparent 1px) 0 0/72px 72px,
+  linear-gradient(90deg, rgba(16,24,40,.028) 1px, transparent 1px) 0 0/72px 72px,
+  var(--canvas)}
 .wrap{max-width:1160px;margin:0 auto;padding:0 28px 72px}
 b,strong{font-weight:600}
 
@@ -115,7 +124,8 @@ border:1px solid var(--line-2);background:var(--surface);color:var(--ink);flex:1
 .chip{font:inherit;font-size:12.5px;padding:5px 12px;border-radius:7px;cursor:pointer;
 border:1px solid var(--line-2);background:var(--surface);color:var(--ink-2)}
 .chip:hover{border-color:var(--accent);color:var(--accent)}
-.chip[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+.chip[aria-pressed="true"]{background:var(--chain);color:#fff;border-color:transparent;
+font-weight:600;box-shadow:0 2px 10px rgba(67,56,202,.28)}
 .group{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .group .lb{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
 color:var(--muted);margin-right:4px}
