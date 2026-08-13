@@ -28,6 +28,9 @@ from .html import render_result_panel
 
 BRAND = "체키"
 
+CATEGORY_ORDER = ("물품구매", "용역", "자문", "연구개발", "라이선스")
+"""계약 분류. 필터는 이 순서로 고정하고, 그 밖의 분류는 뒤에 붙인다."""
+
 STATUS_ORDER = ("started", "ongoing", "done")
 STATUS_LABEL = {"started": "개시", "ongoing": "진행중", "done": "완료"}
 STATUS_COLOR = {"started": "#7c8698", "ongoing": "#1849a9", "done": "#087443"}
@@ -39,7 +42,17 @@ _CSS = """
 /* ── 앱 셸 ────────────────────────────────────────── */
 body{background:var(--canvas)}
 .app{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
-@media(max-width:900px){.app{grid-template-columns:1fr}.side{display:none}}
+@media(max-width:900px){
+  .app{grid-template-columns:1fr}
+  .side{padding:10px 12px}
+  .side .grp,.side .foot{display:none}
+  .brand{padding:2px 4px 10px}
+  .side .nav{display:flex;gap:6px;overflow-x:auto}
+  .side button{width:auto;flex:0 0 auto;white-space:nowrap;padding:7px 12px}
+  .topbar{padding:0 16px;min-height:50px}
+  .view{padding:18px 16px 60px}
+  .ck-buddy{display:none}
+}
 .side{background:#0d1526;color:#c3cbd9;padding:20px 14px;border-right:1px solid #0a1120}
 .brand{display:flex;align-items:center;gap:10px;padding:4px 10px 22px}
 .brand .mark{width:30px;height:30px;border-radius:8px;background:#2563eb;color:#fff;
@@ -977,7 +990,9 @@ class ContractEntry:
 
 
 def render_workspace(entries: list[ContractEntry]) -> str:
-    categories = sorted({e.category for e in entries})
+    present = {e.category for e in entries}
+    categories = [c for c in CATEGORY_ORDER if c in present]
+    categories += sorted(present - set(CATEGORY_ORDER))
     total_versions = sum(len(e.versions) for e in entries)
     total_high = sum(e.flagged for e in entries)
     total_changes = sum(step.total for e in entries for step in e.timeline)
@@ -998,6 +1013,7 @@ def render_workspace(entries: list[ContractEntry]) -> str:
     </div>
   </div>
   <div class="grp">메뉴</div>
+  <div class="nav">
   <button data-goto="dashboard" aria-current="true"><span>현황관리</span></button>
   <button data-goto="contracts"><span>계약상세</span>
     <span class="cnt">{len(entries)}</span></button>
@@ -1005,6 +1021,7 @@ def render_workspace(entries: list[ContractEntry]) -> str:
   <button data-goto="customers"><span>고객관리</span>
     <span class="cnt">{_party_total(entries)}</span></button>
   <button data-goto="search"><span>조항검색</span></button>
+  </div>
   <div class="foot">
     계약 {len(entries)}건 · 버전 {total_versions}개<br>마지막 분석 {_e(_last_run(entries))}
   </div>
