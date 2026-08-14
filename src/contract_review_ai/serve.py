@@ -377,7 +377,12 @@ class Handler(BaseHTTPRequestHandler):
                 first = datetime.strptime(stamps[0], "%Y-%m-%d %H:%M:%S")
                 last = datetime.strptime(stamps[-1], "%Y-%m-%d %H:%M:%S")
                 seconds = (last - first).total_seconds() / max(len(stamps) - 1, 1)
-                interval = f"{seconds:.0f}초" if seconds < 90 else f"{seconds / 60:.0f}분"
+                if seconds < 1:  # 표본 원장처럼 한 번에 적재된 경우
+                    interval = "1초 미만"
+                elif seconds < 90:
+                    interval = f"{seconds:.0f}초"
+                else:
+                    interval = f"{seconds / 60:.0f}분"
             except ValueError:
                 interval = ""
 

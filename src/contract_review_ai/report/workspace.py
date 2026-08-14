@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import html as _html
+import json
 from dataclasses import dataclass, field
 
 from .. import DISCLAIMER, relations
@@ -181,6 +182,39 @@ background:#eef2f7;color:var(--ink-2);white-space:nowrap}
 .badge.cat{background:#eef4ff;color:#1849a9}
 .badge.high{background:var(--del);color:var(--high)}
 .badge.medium{background:#fdf3e7;color:var(--medium)}
+/* 체인 지도 */
+.bmap-card{margin-bottom:0}
+.bmap-scroll{overflow-x:auto;padding:4px 2px 8px}
+.bmap{width:100%;min-width:760px;height:auto}
+.blink{stroke:var(--line-strong,#cbd5e1);stroke-width:2;fill:none;
+stroke-dasharray:60;stroke-dashoffset:60;animation:draw .5s ease forwards;animation-delay:var(--d)}
+@keyframes draw{to{stroke-dashoffset:0}}
+.bnode{cursor:pointer;opacity:0;animation:rise .34s ease forwards;animation-delay:var(--d)}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+.bnode .bfill{fill:var(--c);opacity:.08}
+.bnode .bedge{fill:none;stroke:var(--c);stroke-opacity:.38;stroke-width:1.2}
+.bnode .bbar{fill:var(--c)}
+.bnode .bi{font-size:12px;font-weight:700;fill:var(--ink)}
+.bnode .bh{font-family:ui-monospace,Consolas,monospace;font-size:10.5px;fill:var(--muted)}
+.bnode .bv{font-size:10.5px;fill:var(--muted)}
+.bnode:hover .bfill{opacity:.2}
+.bnode:hover .bedge{stroke-opacity:1;stroke-width:2}
+.bnode.genesis .bbar{fill:var(--ink)}
+.bnode.fresh .bfill{animation:landed 1.6s ease}
+@keyframes landed{0%{opacity:.75}100%{opacity:.08}}
+.bnode.tipnode .bedge{stroke-opacity:1;stroke-width:2.2;
+animation:tipring 1.8s ease-in-out infinite .8s}
+@keyframes tipring{0%,100%{stroke-opacity:1}50%{stroke-opacity:.3}}
+
+/* 기록 추이 */
+.spark{display:flex;align-items:flex-end;gap:8px;height:74px}
+.sb{flex:1 1 0;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;
+height:100%;gap:5px}
+.sb i{display:block;width:100%;max-width:34px;border-radius:5px 5px 0 0;
+background:linear-gradient(180deg,var(--chain),rgba(67,56,202,.28))}
+.sb span{font-size:10.5px;color:var(--muted)}
+.dist .row[data-open]{cursor:pointer}
+.dist .row[data-open]:hover span:not(.bar){color:var(--accent)}
 .badge.ok{background:var(--ins);color:var(--ok)}
 .badge.latest{background:#101828;color:#fff}
 .num{font-variant-numeric:tabular-nums;text-align:right}
@@ -262,47 +296,12 @@ box-shadow:var(--shadow);cursor:pointer}
 .hit p{margin:8px 0 0;font-size:13px;line-height:1.7;color:var(--ink-2);white-space:pre-wrap}
 .hit mark{background:#fff3c4;border-radius:3px;padding:0 2px}
 /* ── 체인 표현 ─────────────────────────────────────── */
-.chainpill{display:flex;align-items:center;gap:7px;margin-left:auto;font:inherit;font-size:12px;
-padding:5px 12px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);
-cursor:pointer;color:var(--ink-2)}
-.chainpill:hover{border-color:var(--accent)}
-.chainpill b{font-weight:600}
-.chainpill .node{width:7px;height:7px;border-radius:50%;background:var(--ok);
-box-shadow:0 0 8px rgba(8,116,67,.55)}
-.chainpill .link{width:10px;height:2px;background:var(--ok);opacity:.6;border-radius:2px}
-.chainpill.bad .node,.chainpill.bad .link{background:var(--high)}
-.chainpill .tip{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--muted)}
-.chainpill .lock{font-size:11px;color:var(--accent);background:var(--accent-soft);
-padding:1px 7px;border-radius:999px}
 .topbar .who{margin-left:14px}
 
 .step-link[data-result-open]{cursor:pointer;border-radius:8px;padding-left:8px;
 margin-left:-8px;transition:background .14s}
 .step-link[data-result-open]:hover{background:var(--accent-soft)}
 .step-link[data-result-open] .when{color:var(--accent);font-weight:600}
-.chain{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding:4px 0 2px}
-.cnode{position:relative;flex:0 0 auto;min-width:78px;padding:9px 11px;margin-right:18px;
-border:1px solid var(--line);border-radius:9px;text-align:center;
-background:linear-gradient(180deg,#fff,#FBFCFE);box-shadow:0 1px 2px rgba(16,24,40,.06)}
-.cnode:last-child{border-color:rgba(67,56,202,.45);box-shadow:var(--glow)}
-.cnode:last-child{margin-right:0}
-.cnode::after{content:"";position:absolute;right:-18px;top:50%;width:18px;height:2px;
-background:var(--chain);transform:translateY(-50%);border-radius:2px}
-.cnode:last-child::after{display:none}
-.cnode.more{display:flex;align-items:center;color:var(--muted);min-width:34px}
-.cidx{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
-.cver{font-size:12.5px;font-weight:600;margin:1px 0 2px}
-.chash{font-family:ui-monospace,Consolas,monospace;font-size:10.5px;color:var(--accent)}
-
-.ledger-card{border-left:3px solid var(--ok);
-background:linear-gradient(120deg,rgba(8,116,67,.045),transparent 42%),var(--surface)}
-.ledger-card.bad{border-left-color:var(--high)}
-.ledger-grid{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
-.ledger-grid .k{font-size:11.5px;color:var(--muted)}
-.ledger-grid .n{font-size:26px;font-weight:600;line-height:1.2;
-font-variant-numeric:tabular-nums;background:var(--chain);-webkit-background-clip:text;background-clip:text;color:transparent}
-.ledger-grid .d{font-size:11.5px;color:var(--muted);margin-top:2px}
-.tipline{font-size:13px;margin-top:6px;color:var(--accent)}
 .badge.ok{background:var(--ins);color:var(--ok)}
 .linkcell .arrow2{margin:0 6px;color:var(--accent)}
 .tbl tbody tr[data-open]{cursor:pointer}
@@ -369,6 +368,104 @@ animation:pulse 1.6s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(8,116,67,.45)}
 50%{opacity:.55;box-shadow:0 0 0 6px rgba(8,116,67,0)}}
 
+/* Blockchain 콘솔 — 이 탭만 어둡게 간다. 나머지 화면은 흰 바탕 그대로다. */
+.dist .row.dotted{grid-template-columns:9px 104px 1fr 34px}
+.hud{--hb:#070C1A;--hi:#EAF2FF;--hd:#8098C4;--hc:#4FD5FF;--ha:#FFB648;
+position:relative;overflow:hidden;border-radius:16px;padding:26px 26px 30px;
+color:var(--hi);background:
+radial-gradient(900px 420px at 12% -10%,rgba(79,213,255,.16),transparent 62%),
+radial-gradient(760px 460px at 92% 8%,rgba(255,182,72,.11),transparent 60%),
+linear-gradient(180deg,#0B1327,#060A16 62%,#04070F);
+box-shadow:0 30px 70px -30px rgba(4,10,26,.85),inset 0 0 0 1px rgba(79,213,255,.16)}
+.hud::before,.hud::after{content:"";position:absolute;width:34px;height:34px;pointer-events:none}
+.hud::before{top:12px;left:12px;border-top:2px solid var(--hc);border-left:2px solid var(--hc);
+border-radius:8px 0 0 0}
+.hud::after{bottom:12px;right:12px;border-bottom:2px solid var(--hc);
+border-right:2px solid var(--hc);border-radius:0 0 8px 0}
+.hud-grid{position:absolute;inset:0;pointer-events:none;opacity:.5;
+background-image:linear-gradient(rgba(79,213,255,.055) 1px,transparent 1px),
+linear-gradient(90deg,rgba(79,213,255,.055) 1px,transparent 1px);background-size:38px 38px;
+-webkit-mask-image:radial-gradient(120% 90% at 50% 0,#000,transparent 78%);
+mask-image:radial-gradient(120% 90% at 50% 0,#000,transparent 78%)}
+.hud-sweep{position:absolute;left:0;right:0;height:150px;pointer-events:none;
+background:linear-gradient(180deg,transparent,rgba(79,213,255,.09),transparent);
+animation:hudsweep 7s linear infinite}
+@keyframes hudsweep{0%{transform:translateY(-160px)}100%{transform:translateY(760px)}}
+
+.hud>*{position:relative;z-index:1}
+.hud .hud-grid{position:absolute;inset:0;z-index:0}
+.hud .hud-sweep{position:absolute;top:0;z-index:0}
+.hud-head{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.hud-ops{margin-left:auto;display:flex;gap:10px;align-items:center}
+.hud-kicker{font-family:ui-monospace,Consolas,monospace;font-size:10.5px;letter-spacing:.22em;
+color:var(--hc);opacity:.85}
+.hud-id h2{margin:6px 0 6px;font-size:34px;font-weight:300;letter-spacing:.16em;line-height:1;
+color:#fff;text-shadow:0 0 26px rgba(79,213,255,.55)}
+.hud-id h2 span{font-weight:700;color:var(--hc)}
+.hud-id p{margin:0;max-width:620px;font-size:12.5px;line-height:1.75;color:var(--hd)}
+
+.hud .cs{background:rgba(11,20,42,.62);border:1px solid rgba(79,213,255,.2);box-shadow:none;
+backdrop-filter:blur(2px)}
+.hud .cs::before{background:linear-gradient(90deg,var(--hc),transparent)}
+.hud .cs .hud-kicker{margin-bottom:5px}
+.hud .cs .k{color:var(--hd);font-size:11px}
+.hud .cs .n{color:#fff;text-shadow:0 0 18px rgba(79,213,255,.45)}
+.hud .cs .n.tiphash{color:var(--hc);text-shadow:none}
+.hud .cs .d{color:var(--hd)}
+.hud .cs .n.bump{animation:bump .6s ease}
+
+.hud .livedot{color:#062;background:rgba(79,213,255,.14);color:var(--hc);
+border:1px solid rgba(79,213,255,.35)}
+.hud .livedot i{background:var(--hc);box-shadow:0 0 10px var(--hc)}
+.hud .livedot[data-live="off"]{color:var(--hd);background:rgba(128,152,196,.12);
+border-color:rgba(128,152,196,.3)}
+.hud .livedot[data-live="off"] i{background:var(--hd);box-shadow:none}
+.hud .mini{background:transparent;border:1px solid rgba(79,213,255,.4);color:var(--hc);
+letter-spacing:.08em}
+.hud .mini:hover{background:rgba(79,213,255,.14);border-color:var(--hc);color:#fff}
+
+.hud .hashstream{background:rgba(4,8,18,.7);border-color:rgba(79,213,255,.18)}
+.hud .tick{color:var(--hd)}
+.hud .tick i{color:var(--ha)}
+
+.hud .card{background:rgba(11,20,42,.55);border:1px solid rgba(79,213,255,.16);box-shadow:none}
+.hud .card h2{color:#fff;font-family:ui-monospace,Consolas,monospace;font-size:12px;
+font-weight:600;letter-spacing:.2em}
+.hud .card h2 em{font-style:normal;font-family:inherit;letter-spacing:0;font-size:13px;
+color:var(--hd);margin-left:9px}
+.hud .hint,.hud .ev,.hud .k{color:var(--hd)}
+.hud .badge{background:rgba(79,213,255,.12);color:var(--hc);border:1px solid rgba(79,213,255,.28)}
+.hud .badge.ok{background:rgba(255,182,72,.12);color:var(--ha);border-color:rgba(255,182,72,.3)}
+.hud .rl{color:var(--hd)}
+.hud .dist .row span:not(.bar){color:var(--hi)}
+.hud .dist .v{color:var(--hd)}
+.hud .dist .bar{background:rgba(79,213,255,.12)}
+.hud .dist .bar i{background:linear-gradient(90deg,var(--hc),rgba(79,213,255,.35));
+box-shadow:0 0 12px rgba(79,213,255,.4)}
+.hud .dist .row[data-open]:hover span:not(.bar){color:var(--hc)}
+
+.hud .sec h3{color:#fff;font-family:ui-monospace,Consolas,monospace;font-size:12px;
+letter-spacing:.2em}
+.hud .sec h3 em{font-style:normal;font-family:inherit;letter-spacing:0;font-size:13px;
+color:var(--hd);margin-left:9px}
+.hud .tbl{background:rgba(6,11,24,.72);border-color:rgba(79,213,255,.16)}
+.hud .tbl th{background:rgba(79,213,255,.07);color:var(--hc);border-color:rgba(79,213,255,.16)}
+.hud .tbl td{border-color:rgba(79,213,255,.1);color:var(--hi)}
+.hud .tbl .sub,.hud .tbl .mono{color:var(--hd)}
+.hud .tbl tbody tr[data-open]:hover{background:rgba(79,213,255,.08)}
+.hud .linkcell .arrow2{color:var(--ha)}
+
+/* 체인 지도 — 어둠 위에서 빛나게 */
+.hud .blink{stroke:rgba(79,213,255,.5)}
+.hud .bnode .bfill{opacity:.16}
+.hud .bnode .bedge{stroke-opacity:.55}
+.hud .bnode .bi{fill:#fff}
+.hud .bnode .bh,.hud .bnode .bv{fill:var(--hd)}
+.hud .bnode:hover .bfill{opacity:.4}
+.hud .bnode.genesis .bbar{fill:var(--ha)}
+.hud .bnode.tipnode .bedge{stroke:var(--hc);stroke-opacity:1;
+filter:drop-shadow(0 0 6px rgba(79,213,255,.9))}
+.hud .bnode.fresh .bfill{animation:landed 1.6s ease}
 .chainstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;
 margin-bottom:14px}
 .cs{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;
@@ -554,7 +651,7 @@ _APP_JS = r"""
   function goCreate(){ show('create'); crumbs([{label:'계약생성'}]); tell('create'); }
   function goCustomers(){ show('customers'); crumbs([{label:'고객관리'}]); tell('customers'); }
   function goSearch(){ show('search'); crumbs([{label:'조항검색'}]); tell('search'); }
-  function goLedger(){ show('ledger'); crumbs([{label:'블록체인'}]); tell('ledger'); }
+  function goLedger(){ show('ledger'); crumbs([{label:'Blockchain'}]); tell('ledger'); }
 
   function goDetail(id, title){
     document.querySelectorAll('[data-detail]').forEach(function(el){
@@ -1081,6 +1178,76 @@ _APP_JS = r"""
     });
     var known = null;
 
+    // 체인 지도에 새 블록을 이어 붙인다. 서버가 그린 배치를 그대로 이어 가야
+    // 새로 그린 칸이 어긋나지 않으므로, 격자 값은 svg에 박아 둔 것을 쓴다.
+    var map = document.querySelector('.bmap');
+    var geo = null;
+    if (map) {
+      geo = {
+        cols: +map.dataset.cols, cw: +map.dataset.cw, ch: +map.dataset.ch,
+        gx: +map.dataset.gx, gy: +map.dataset.gy, count: +map.dataset.count,
+        palette: JSON.parse(map.dataset.palette || '{}'),
+        links: map.querySelector('.blinks'), nodes: map.querySelector('.bnodes')
+      };
+    }
+    var SVGNS = 'http://www.w3.org/2000/svg';
+
+    function place(i){
+      var row = Math.floor(i / geo.cols), col = i % geo.cols;
+      if (row % 2) col = geo.cols - 1 - col;
+      return [col * (geo.cw + geo.gx), row * (geo.ch + geo.gy)];
+    }
+    function el(name, attrs, text){
+      var node = document.createElementNS(SVGNS, name);
+      for (var key in attrs) node.setAttribute(key, attrs[key]);
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+    function appendBlock(block){
+      var i = geo.count;
+      var at = place(i), x = at[0], y = at[1];
+      if (i > 0) {  // 앞 블록에서 이 블록으로 오는 선
+        var from = place(i - 1), px = from[0], py = from[1], d;
+        if (py === y) {
+          d = px < x ? 'M' + (px + geo.cw) + ',' + (y + geo.ch / 2) + ' L' + x + ',' + (y + geo.ch / 2)
+                     : 'M' + px + ',' + (y + geo.ch / 2) + ' L' + (x + geo.cw) + ',' + (y + geo.ch / 2);
+        } else {
+          d = 'M' + (px + geo.cw / 2) + ',' + (py + geo.ch) + ' L' + (px + geo.cw / 2) + ',' + y;
+        }
+        geo.links.appendChild(el('path', {'class': 'blink', d: d, style: '--d:0s'}));
+      }
+      var known2 = geo.palette[block.contract_id] || ['#64748B', block.contract_id];
+      var g = el('g', {
+        'class': 'bnode tipnode fresh', 'data-open': block.contract_id,
+        'data-title': known2[1], transform: 'translate(' + x + ',' + y + ')',
+        style: '--c:' + known2[0] + ';--d:0s'
+      });
+      g.appendChild(el('rect', {'class': 'bfill', width: geo.cw, height: geo.ch, rx: 10}));
+      g.appendChild(el('rect', {'class': 'bedge', width: geo.cw, height: geo.ch, rx: 10}));
+      g.appendChild(el('rect', {'class': 'bbar', width: 4, height: geo.ch, rx: 2}));
+      g.appendChild(el('text', {'class': 'bi', x: 12, y: 20}, '#' + block.index));
+      g.appendChild(el('text', {'class': 'bh', x: 12, y: 34}, block.hash.slice(0, 10)));
+      g.appendChild(el('text', {'class': 'bv', x: 12, y: 47}, (block.version || block.kind).slice(0, 12)));
+      g.appendChild(el('title', {}, '#' + block.index + ' · ' + block.at.slice(0, 16) + ' · ' +
+        known2[1] + ' · ' + block.version + ' ' + block.label));
+
+      var previous = geo.nodes.querySelector('.tipnode');
+      if (previous) previous.classList.remove('tipnode');
+      geo.nodes.appendChild(g);
+      geo.count = i + 1;
+
+      var rows = Math.ceil(geo.count / geo.cols);
+      var height = rows * geo.ch + (rows - 1) * geo.gy;
+      var width = geo.cols * geo.cw + (geo.cols - 1) * geo.gx;
+      map.setAttribute('viewBox', '-6 -6 ' + (width + 12) + ' ' + (height + 12));
+      var badge = document.querySelector('[data-map-count]');
+      if (badge) badge.textContent = '최근 ' + geo.count + '블록';
+    }
+    function growMap(recent, added){
+      if (!geo || !recent || !recent.length) return;
+      recent.slice(Math.max(recent.length - added, 0)).forEach(appendBlock);
+    }
+
     function human(bytes){
       if (bytes > 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
       if (bytes > 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -1107,8 +1274,11 @@ _APP_JS = r"""
         if (fields.verified) {
           fields.verified.style.color = s.verified ? 'var(--ok)' : 'var(--high)';
         }
-        if (grew && window.checky) {
-          window.checky.say('블록 #' + (s.length - 1) + '이 체인에 붙었어요.', 'ok', 8000);
+        if (grew) {
+          growMap(s.recent, s.length - known);
+          if (window.checky) {
+            window.checky.say('블록 #' + (s.length - 1) + '이 체인에 붙었어요.', 'ok', 8000);
+          }
         }
         known = s.length;
       }).catch(function(){});
@@ -1357,10 +1527,9 @@ def render_workspace(entries: list[ContractEntry], integrity=None, blocks=None) 
       <button data-goto="create">계약생성</button>
       <button data-goto="customers">고객관리<span class="cnt">{_party_total(entries)}</span></button>
       <button data-goto="search">조항검색</button>
-      <button data-goto="ledger">블록체인<span class="cnt">{len(blocks)}</span></button>
+      <button data-goto="ledger">Blockchain<span class="cnt">{len(blocks)}</span></button>
     </nav>
     <div class="appbar-right">
-      {_integrity_pill(integrity, entries)}
       <div class="who"><span>{_e(USER_NAME)}</span><div class="av">{_e(USER_NAME[:1])}</div></div>
     </div>
   </div>
@@ -1369,12 +1538,11 @@ def render_workspace(entries: list[ContractEntry], integrity=None, blocks=None) 
 <div class="main">
 <div class="topbar">
   <div class="path js-path"></div>
-  <div class="shellinfo">계약 {len(entries)}건 · 버전 {total_versions}개
-    {_vault_badge(entries, integrity)}</div>
+  <div class="shellinfo">계약 {len(entries)}건 · 버전 {total_versions}개</div>
 </div>
 
 <div class="view" data-app-view="dashboard">
-{_dashboard(entries, total_versions, total_high, total_changes, blocks, integrity)}
+{_dashboard(entries, total_versions, total_high, total_changes)}
 </div>
 
 <div class="view" data-app-view="contracts" hidden>
@@ -1419,14 +1587,7 @@ def render_workspace(entries: list[ContractEntry], integrity=None, blocks=None) 
 # ---------------------------------------------------------------- 대시보드
 
 
-def _dashboard(
-    entries,
-    total_versions: int,
-    total_high: int,
-    total_changes: int,
-    blocks=None,
-    integrity=None,
-) -> str:
+def _dashboard(entries, total_versions: int, total_high: int, total_changes: int) -> str:
     negotiating = sum(1 for e in entries if len(e.versions) > 1)
     kpis = [
         ("관리 계약", len(entries), f"분류 {len({e.category for e in entries})}종", ""),
@@ -1477,7 +1638,6 @@ def _dashboard(
 {_status_board(entries)}
 <div class="kpis">{kpi_html}</div>
 {_relation_map(entries)}
-{_ledger_card(blocks, integrity, entries)}
 {_deadline_panel(entries)}
 <div class="panels">
   <div class="card"><h2>최근 개정 활동</h2><div class="feed">{feed}</div></div>
@@ -1710,15 +1870,14 @@ def _detail_view(entry: ContractEntry, index: int) -> str:
 
 <div class="sec">
   <h3>버전 관리</h3>
-  <p class="hint">등록된 원본은 SHA-256으로 고정됩니다. 버전을 선택하면 그 시점의 조문 전문을 봅니다.</p>
+  <p class="hint">버전을 선택하면 그 시점의 조문 전문을 봅니다.
+  등록 기록과 무결성은 상단 <b>Blockchain</b> 탭에서 확인합니다.</p>
   <div class="tbl"><table>
   <thead><tr><th>버전</th><th>라벨</th><th>주요 변경</th><th>등록 일시</th>
   <th>해시</th></tr></thead>
   <tbody>{version_rows}</tbody></table></div>
   {_version_docs(entry)}
 </div>
-
-{_chain_panel(entry)}
 
 {_meeting_panel(entry)}
 
@@ -1823,42 +1982,6 @@ def _meeting_panel(entry: ContractEntry) -> str:
     <div class="proposals" data-proposals></div>
   </div>
 </div>"""
-
-
-def _integrity_pill(integrity, entries: list[ContractEntry]) -> str:
-    """상단바 무결성 표시 — 체인이 성립하는지 한눈에."""
-    if integrity is None:
-        return ""
-    sealed = any(e.encrypted for e in entries)
-    state = "ok" if integrity.ok else "bad"
-    label = f"체인 {integrity.length}블록" if integrity.ok else "체인 불일치"
-    return (
-        f'<button class="chainpill {state}" data-goto-view="ledger" title="원장 보기">'
-        f'<span class="node"></span><span class="link"></span><span class="node"></span>'
-        f"<b>{_e(label)}</b>"
-        + (f'<span class="tip">{_e(integrity.tip[:10])}…</span>' if integrity.ok else "")
-        + ("<span class='lock'>암호화</span>" if sealed else "")
-        + "</button>"
-    )
-
-
-def _chain_strip(blocks, limit: int = 12) -> str:
-    """블록을 이어 붙인 띠. 각 칸이 앞 칸의 해시를 물고 있다는 것을 보이게 한다."""
-    if not blocks:
-        return ""
-
-    shown = blocks[-limit:]
-    cells = []
-    if len(blocks) > limit:
-        cells.append('<div class="cnode more">…</div>')
-    for block in shown:
-        cells.append(
-            f'<div class="cnode" title="{_e(block.hash)}">'
-            f'<div class="cidx">#{block.index}</div>'
-            f'<div class="cver">{_e(block.version or block.kind)}</div>'
-            f'<div class="chash">{_e(block.hash[:8])}</div></div>'
-        )
-    return f'<div class="chain">{"".join(cells)}</div>'
 
 
 CATEGORY_COLOR = {
@@ -1986,33 +2109,178 @@ def _relation_map(entries: list[ContractEntry]) -> str:
 </div>"""
 
 
-def _ledger_card(blocks, integrity, entries: list[ContractEntry]) -> str:
-    """현황관리 상단의 원장 요약."""
-    if integrity is None:
+def _chain_map(blocks, entries: list[ContractEntry]) -> str:
+    """체인 지도.
+
+    블록을 뱀처럼 접어 늘어놓고, 앞 블록에서 뒤 블록으로 실제 연결 순서대로 선을
+    잇는다. 표로 보면 그저 행이 쌓인 것 같지만, 이렇게 두면 "하나가 앞을 물고
+    있다"는 구조 자체가 눈에 들어온다. 색은 그 블록이 어느 분류의 계약을
+    기록했는지다.
+    """
+    if not blocks:
         return ""
 
-    sealed = sum(1 for e in entries if e.encrypted)
-    state_class = "ok" if integrity.ok else "bad"
-    state_text = "무결성 확인" if integrity.ok else f"블록 {integrity.broken_at} 불일치"
-    return f"""<div class="card ledger-card {state_class}" style="margin-bottom:20px">
-  <h2>블록체인
-    <span class="badge {"ok" if integrity.ok else "high"}">{_e(state_text)}</span>
-    {f'<span class="badge">암호화 보관 {sealed}건</span>' if sealed else ""}
+    shown = blocks[-60:]
+    category = {e.contract_id: e.category for e in entries}
+    titles = {e.contract_id: e.label for e in entries}
+
+    cols, cw, ch, gx, gy = 10, 86, 56, 20, 40
+    rows = (len(shown) + cols - 1) // cols
+    width = cols * cw + (cols - 1) * gx
+    height = rows * ch + (rows - 1) * gy
+
+    def place(i: int) -> tuple[int, int]:
+        row, col = divmod(i, cols)
+        if row % 2:  # 홀수 줄은 되짚어 온다 — 줄 끝에서 바로 아래로 이어진다
+            col = cols - 1 - col
+        return col * (cw + gx), row * (ch + gy)
+
+    links, nodes = [], []
+    for i, block in enumerate(shown):
+        x, y = place(i)
+        color = CATEGORY_COLOR.get(category.get(block.contract_id, ""), _FALLBACK_COLOR)
+        last = i == len(shown) - 1
+
+        if i + 1 < len(shown):
+            nx, ny = place(i + 1)
+            if ny == y:  # 같은 줄 — 마주 보는 변끼리
+                x1, x2 = (x + cw, nx) if nx > x else (x, nx + cw)
+                path = f"M{x1},{y + ch / 2} L{x2},{y + ch / 2}"
+            else:  # 줄이 바뀐다 — 바로 아래 칸으로 내려간다
+                path = f"M{x + cw / 2},{y + ch} L{x + cw / 2},{ny}"
+            links.append(
+                f'<path class="blink" d="{path}" style="--d:{i * 0.045:.2f}s"/>'
+            )
+
+        title = titles.get(block.contract_id, block.contract_id)
+        tip = (
+            f"#{block.index} · {block.at[:16]} · {title}"
+            f" · {block.version} {block.label}\n해시 {block.hash[:24]}…"
+            f"\n앞 블록 {block.prev[:24]}…"
+        )
+        nodes.append(
+            f'<g class="bnode{" tipnode" if last else ""}{" genesis" if block.index == 0 else ""}" '
+            f'data-open="{_e(block.contract_id)}" data-title="{_e(title)}" '
+            f'transform="translate({x},{y})" style="--c:{color};--d:{i * 0.03:.2f}s">'
+            f'<rect class="bfill" width="{cw}" height="{ch}" rx="10"/>'
+            f'<rect class="bedge" width="{cw}" height="{ch}" rx="10"/>'
+            f'<rect class="bbar" width="4" height="{ch}" rx="2"/>'
+            f'<text class="bi" x="12" y="20">#{block.index}</text>'
+            f'<text class="bh" x="12" y="34">{_e(block.hash[:10])}</text>'
+            f'<text class="bv" x="12" y="47">{_e((block.version or block.kind)[:12])}</text>'
+            f"<title>{_e(tip)}</title></g>"
+        )
+
+    # 화면이 새 블록을 받아 지도에 직접 이어 붙일 때 쓰는 값들 — 서버가 그린 배치를
+    # 그대로 이어 가야 새로 그린 칸이 어긋나지 않는다.
+    palette = {
+        e.contract_id: [CATEGORY_COLOR.get(e.category, _FALLBACK_COLOR), e.label] for e in entries
+    }
+    geometry = (
+        f'data-cols="{cols}" data-cw="{cw}" data-ch="{ch}" data-gx="{gx}" data-gy="{gy}" '
+        f'data-count="{len(shown)}" data-palette="{_e(json.dumps(palette, ensure_ascii=False))}"'
+    )
+
+    used = {category.get(b.contract_id, "") for b in shown}
+    legend = "".join(
+        f'<span class="rl"><i style="background:{color}"></i>{_e(name)}</span>'
+        for name, color in CATEGORY_COLOR.items()
+        if name in used
+    )
+    omitted = (
+        f'<span class="ev">앞선 {len(blocks) - len(shown)}블록은 아래 표에서 봅니다</span>'
+        if len(blocks) > len(shown)
+        else ""
+    )
+
+    return f"""<div class="card bmap-card">
+  <h2>CHAIN MAP <em>체인 지도</em>
+    <span class="badge" data-map-count>최근 {len(shown)}블록</span>
+    <span class="badge ok">GENESIS → TIP 단일 경로</span>
   </h2>
-  <div class="ledger-grid">
-    <div>
-      <div class="k">블록</div><div class="n">{integrity.length}</div>
-      <div class="d">등록·편집마다 1개</div>
-    </div>
-    <div>
-      <div class="k">체인 팁</div>
-      <div class="mono tipline">{_e(integrity.tip[:24])}…</div>
-      <div class="d">가장 최근 블록의 해시</div>
-    </div>
-    <div style="flex:1;min-width:220px">
-      <div class="k">최근 블록</div>
-      {_chain_strip(blocks, limit=8)}
-    </div>
+  <p class="hint" style="margin:-6px 0 12px">블록마다 앞 블록의 해시가 들어 있어, 선을 따라
+  하나로 이어집니다. 가운데를 고치면 그 뒤가 전부 어긋납니다. 블록을 누르면 그 계약으로 갑니다.</p>
+  <div class="bmap-scroll">
+    <svg class="bmap" viewBox="-6 -6 {width + 12} {height + 12}" role="img" aria-label="체인 지도"
+      {geometry}>
+      <g class="blinks">{"".join(links)}</g>
+      <g class="bnodes">{"".join(nodes)}</g>
+    </svg>
+  </div>
+  <div class="rel-legend" style="margin-top:10px">{legend}{omitted}</div>
+</div>"""
+
+
+def _chain_breakdown(blocks, entries: list[ContractEntry]) -> str:
+    """어느 계약이 기록을 얼마나 남겼는지, 어떤 종류의 기록인지."""
+    if not blocks:
+        return ""
+
+    titles = {e.contract_id: e.label for e in entries}
+    category = {e.contract_id: e.category for e in entries}
+    per: dict[str, int] = {}
+    kinds: dict[str, int] = {}
+    days: dict[str, int] = {}
+    for block in blocks:
+        per[block.contract_id] = per.get(block.contract_id, 0) + 1
+        kinds[block.kind] = kinds.get(block.kind, 0) + 1
+        if block.at:
+            days[block.at[:10]] = days.get(block.at[:10], 0) + 1
+
+    ranked = sorted(per.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
+    top = max((c for _, c in ranked), default=1)
+    bars = "".join(
+        f'<div class="row dotted" data-open="{_e(cid)}" '
+        f'data-title="{_e(titles.get(cid, cid))}">'
+        f'<span class="dotmini" style="background:'
+        f'{CATEGORY_COLOR.get(category.get(cid, ""), _FALLBACK_COLOR)}"></span>'
+        f"<span>{_e(titles.get(cid, cid))}</span>"
+        f'<span class="bar"><i style="width:{int(100 * count / top)}%"></i></span>'
+        f'<span class="v">{count}</span></div>'
+        for cid, count in ranked
+    )
+
+    names = {"registered": "등록", "edited": "편집", "meeting": "회의 반영"}
+    kind_rows = "".join(
+        f'<div class="row"><span>{_e(names.get(kind, kind))}</span>'
+        f'<span class="bar"><i style="width:{int(100 * count / max(kinds.values()))}%"></i></span>'
+        f'<span class="v">{count}</span></div>'
+        for kind, count in sorted(kinds.items(), key=lambda kv: -kv[1])
+    )
+
+    # 기록이 여러 날에 걸쳐 있을 때만 추이가 의미가 있다. 한 번에 적재된 원장이라면
+    # 막대 하나짜리 그래프가 되므로, 대신 분류별 분포를 보인다.
+    recent = sorted(days.items())[-7:]
+    if len(recent) >= 3:
+        peak = max(c for _, c in recent)
+        body = '<div class="spark">' + "".join(
+            f'<div class="sb" title="{_e(day)} · {count}블록">'
+            f'<i style="height:{max(8, int(100 * count / peak))}%"></i>'
+            f"<span>{_e(day[5:])}</span></div>"
+            for day, count in recent
+        ) + "</div>"
+        caption = "최근 기록 추이"
+    else:
+        by_category: dict[str, int] = {}
+        for block in blocks:
+            by_category[category.get(block.contract_id, "기타")] = (
+                by_category.get(category.get(block.contract_id, "기타"), 0) + 1
+            )
+        peak = max(by_category.values())
+        body = '<div class="dist">' + "".join(
+            f'<div class="row dotted"><span class="dotmini" style="background:'
+            f'{CATEGORY_COLOR.get(name, _FALLBACK_COLOR)}"></span><span>{_e(name)}</span>'
+            f'<span class="bar"><i style="width:{int(100 * count / peak)}%"></i></span>'
+            f'<span class="v">{count}</span></div>'
+            for name, count in sorted(by_category.items(), key=lambda kv: (-kv[1], kv[0]))
+        ) + "</div>"
+        caption = "분류별 기록"
+
+    return f"""<div class="panels" style="margin-top:20px">
+  <div class="card"><h2>BY CONTRACT <em>계약별 기록</em></h2><div class="dist">{bars}</div></div>
+  <div class="card"><h2>BY TYPE <em>기록 종류</em></h2><div class="dist">{kind_rows}</div>
+    <div class="k" style="margin:14px 0 6px">{caption}</div>
+    {body}
   </div>
 </div>"""
 
@@ -2020,12 +2288,12 @@ def _ledger_card(blocks, integrity, entries: list[ContractEntry]) -> str:
 def _ledger_view(blocks, integrity, entries: list[ContractEntry]) -> str:
     """블록체인 화면.
 
-    숫자는 화면이 주기적으로 `/api/ledger`에 물어 갱신한다. 검증 시간도 그때마다
-    체인을 처음부터 다시 훑어 실제로 잰 값이다 — 표시만 실시간인 것이 아니라
-    정말로 매번 다시 확인한다.
+    다른 화면에 흩어져 있던 블록·해시·무결성 표시를 전부 이 탭으로 모았다. 숫자는
+    화면이 주기적으로 `/api/ledger`에 물어 갱신하고, 검증 시간도 그때마다 체인을
+    처음부터 다시 훑어 실제로 잰 값이다.
     """
     if not blocks:
-        return """<div class="vhead"><div><h2>블록체인</h2>
+        return """<div class="vhead"><div><h2>Blockchain</h2>
         <p>아직 기록된 블록이 없습니다. 계약을 등록하면 첫 블록이 생성됩니다.</p></div></div>"""
 
     titles = {e.contract_id: e.label for e in entries}
@@ -2049,90 +2317,52 @@ def _ledger_view(blocks, integrity, entries: list[ContractEntry]) -> str:
     )
     sealed = any(e.encrypted for e in entries)
 
-    return f"""<div class="vhead">
-  <div><h2>블록체인</h2>
+    return f"""<div class="hud">
+<div class="hud-grid"></div><div class="hud-sweep"></div>
+<div class="hud-head">
+  <div class="hud-id">
+    <div class="hud-kicker">DISTRIBUTED LEDGER · SECURE CHANNEL</div>
+    <h2>BLOCK<span>CHAIN</span></h2>
     <p>등록·편집이 일어날 때마다 블록이 쌓입니다. 각 블록은 앞 블록의 해시를 품고 있어,
     중간 기록을 고치면 뒤가 전부 어긋납니다.</p>
   </div>
-  <div class="right">
+  <div class="hud-ops">
     <span class="livedot" data-live><i></i>실시간 감시</span>
     <button class="mini" data-act="verify-now">지금 검증</button>
   </div>
 </div>
 
 <div class="chainstats">
-  <div class="cs"><div class="k">블록 높이</div>
+  <div class="cs"><div class="hud-kicker">BLOCK HEIGHT</div><div class="k">블록 높이</div>
     <div class="n" data-ls="length">{len(blocks)}</div>
     <div class="d" data-ls="interval">평균 간격 측정 중</div></div>
-  <div class="cs"><div class="k">체인 팁</div>
+  <div class="cs"><div class="hud-kicker">CHAIN TIP</div><div class="k">체인 팁</div>
     <div class="n mono tiphash" data-ls="tip">{_e(blocks[-1].hash[:16])}…</div>
     <div class="d">가장 최근 블록의 해시</div></div>
-  <div class="cs"><div class="k">무결성</div>
+  <div class="cs"><div class="hud-kicker">INTEGRITY</div><div class="k">무결성</div>
     <div class="n" data-ls="verified">{"확인" if integrity and integrity.ok else "불일치"}</div>
     <div class="d"><span data-ls="verify_ms">—</span> 만에 전수 검증</div></div>
-  <div class="cs"><div class="k">보관</div>
+  <div class="cs"><div class="hud-kicker">STORAGE</div><div class="k">보관</div>
     <div class="n">{"암호화" if sealed else "평문"}</div>
     <div class="d"><span data-ls="bytes">—</span> · 마지막 <span data-ls="at">—</span></div></div>
 </div>
 
 <div class="hashstream"><div class="stream-inner">{ticker}{ticker}</div></div>
 
-<div class="chain" data-chain-strip>{_chain_strip(blocks, limit=14)[len('<div class="chain">'):-6]}</div>
+{_chain_map(blocks, entries)}
+{_chain_breakdown(blocks, entries)}
 
-<div class="tbl" style="margin-top:14px"><table>
-<thead><tr><th>블록</th><th>기록 시각</th><th>종류</th><th>대상</th>
-<th>문서 해시</th><th>연결 (앞 → 이 블록)</th></tr></thead>
-<tbody data-ls-rows>{rows}</tbody></table></div>"""
-
-
-def _vault_badge(entries: list[ContractEntry], integrity) -> str:
-    """사이드바 하단 보관 상태 — 암호화 여부와 원장 무결성."""
-    sealed = any(e.encrypted for e in entries)
-    lines = [
-        "<br>보관 " + ("암호화" if sealed else "평문"),
-    ]
-    if integrity is not None:
-        state = "무결성 확인" if integrity.ok else "불일치"
-        lines.append(f" · 원장 {integrity.length}블록 {state}")
-    return "".join(lines)
-
-
-def _chain_panel(entry: ContractEntry) -> str:
-    """계약별 등록 원장.
-
-    버전 표가 '무엇이 등록됐는지'를 보여준다면, 원장은 '그 기록 자체가 손대지
-    않았음'을 보여준다. 각 블록은 앞 블록의 해시를 품고 있어 중간을 고치면
-    뒤가 전부 어긋난다.
-    """
-    if not entry.chain:
-        return ""
-
-    rows = "".join(
-        f"<tr><td class='num'>#{block.index}</td>"
-        f'<td><span class="badge">{_e(block.version)}</span> {_e(block.label)}</td>'
-        f'<td class="mono">{_e(block.at[:16])}</td>'
-        f'<td class="mono">{_e(block.sha256[:12])}…</td>'
-        f'<td class="mono">{_e(block.prev[:8])}… → {_e(block.hash[:8])}…</td></tr>'
-        for block in entry.chain
-    )
-    seal = (
-        '<span class="badge ok">암호화 보관</span>'
-        if entry.encrypted
-        else '<span class="badge">평문 보관</span>'
-    )
-    return f"""<div class="sec" data-collapsible>
-  <h3>블록체인 기록 {seal}
+<div class="sec" data-collapsible style="margin-top:20px">
+  <h3>RAW BLOCKS <em>블록 원문</em>
     <button class="mini toggle" data-act="toggle-sec" aria-expanded="false">펼치기</button>
   </h3>
   <div class="sec-body" hidden>
-  <p class="hint">등록·편집이 일어날 때마다 블록이 하나 붙고, 각 블록은 앞 블록의 해시를
-  품습니다. 중간 기록을 고치면 뒤 블록의 해시가 전부 어긋나 바로 드러납니다.</p>
-  {_chain_strip(entry.chain)}
   <div class="tbl"><table>
-  <thead><tr><th>블록</th><th>버전</th><th>기록 시각</th><th>문서 해시</th>
-  <th>연결</th></tr></thead>
-  <tbody>{rows}</tbody></table></div>
+  <thead><tr><th>블록</th><th>기록 시각</th><th>종류</th><th>대상</th>
+  <th>문서 해시</th><th>연결 (앞 → 이 블록)</th></tr></thead>
+  <tbody data-ls-rows>{rows}</tbody></table></div>
   </div>
+</div>
 </div>"""
 
 
