@@ -113,7 +113,7 @@ padding:0;font-weight:500}
 .statboard{margin-bottom:18px}
 .statcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
 .statcard{position:relative;overflow:hidden;text-align:left;font:inherit;cursor:pointer;
-background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px 14px;
+background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:13px 18px 12px;
 box-shadow:var(--shadow);transition:transform .16s,box-shadow .16s,border-color .16s}
 .statcard:hover{transform:translateY(-2px);border-color:var(--sc);
 box-shadow:0 12px 28px rgba(16,24,40,.10)}
@@ -121,10 +121,10 @@ box-shadow:0 12px 28px rgba(16,24,40,.10)}
 .statcard .dotmark{position:absolute;top:16px;right:16px;width:8px;height:8px;border-radius:50%;
 background:var(--sc);box-shadow:0 0 0 4px color-mix(in srgb,var(--sc) 18%,transparent)}
 .sc-k{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.04em}
-.sc-n{font-size:32px;font-weight:600;line-height:1.1;margin-top:6px;color:var(--sc);
+.sc-n{font-size:28px;font-weight:600;line-height:1.1;margin-top:4px;color:var(--sc);
 font-variant-numeric:tabular-nums}
 .sc-d{font-size:11.5px;color:var(--muted);margin-top:2px}
-.sc-bar{height:4px;border-radius:3px;background:#eef1f5;margin-top:12px;overflow:hidden}
+.sc-bar{height:4px;border-radius:3px;background:#eef1f5;margin-top:9px;overflow:hidden}
 .sc-bar i{display:block;height:100%;border-radius:3px;background:var(--sc);
 animation:grow .8s cubic-bezier(.22,1,.36,1) both}
 .flowbar{display:flex;gap:3px;height:8px;margin-top:12px}
@@ -134,6 +134,16 @@ animation:grow .8s cubic-bezier(.22,1,.36,1) both}
 .tracks{display:flex;flex-direction:column;gap:4px}
 .track{display:grid;grid-template-columns:210px 1fr 150px;gap:16px;align-items:center;
 padding:11px 10px;border-radius:8px;cursor:pointer;transition:background .14s}
+/* 관계망 아래에 붙는 요약 — 한 화면에 같이 들어와야 해서 행을 얇게 간다 */
+.card.compact{padding:14px 16px}
+.card.compact h2{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.card.compact .h2-right{margin-left:auto;font-weight:400}
+.card.compact .tracks{gap:0}
+.card.compact .track{padding:6px 10px;gap:14px;grid-template-columns:260px 1fr 150px}
+.card.compact .tk-name{display:flex;align-items:baseline;gap:8px;min-width:0}
+.card.compact .tk-name b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;
+text-overflow:ellipsis}
+.card.compact .tk-name .ev{display:block;margin:0;font-size:11px;white-space:nowrap}
 .track:hover{background:#f8fafc}
 @media(max-width:820px){.track{grid-template-columns:1fr}}
 .tk-name b{display:block;font-size:13.5px;font-weight:600}
@@ -1629,15 +1639,15 @@ def _dashboard(entries, total_versions: int, total_high: int, total_changes: int
     ) or '<div class="ev">기록된 개정 활동이 없습니다.</div>'
 
     return f"""<div class="vhead">
-  <div><h2>현황관리</h2><p>계약 진행 단계와 최근 개정 활동을 한눈에 확인합니다.</p></div>
+  <div><h2>현황관리</h2><p>계약 간 관계와 진행 단계를 한눈에 확인합니다.</p></div>
   <div class="right">
     <button class="mini" data-export="contracts">계약대장</button>
     <button class="mini" data-export="versions">버전대장</button>
   </div>
 </div>
+{_relation_map(entries)}
 {_status_board(entries)}
 <div class="kpis">{kpi_html}</div>
-{_relation_map(entries)}
 {_deadline_panel(entries)}
 <div class="panels">
   <div class="card"><h2>최근 개정 활동</h2><div class="feed">{feed}</div></div>
@@ -1679,11 +1689,13 @@ def _status_board(entries: list[ContractEntry]) -> str:
         if rows
     )
 
-    # 진행중 계약을 오래된 순으로 — 멈춰 있는 협상이 위로 온다.
-    watch = sorted(
+    # 진행중 계약을 오래된 순으로 — 멈춰 있는 협상이 위로 온다. 관계망 아래에 붙으므로
+    # 한 화면에 같이 들어오도록 네 건까지만, 한 줄에 하나씩 둔다.
+    open_contracts = sorted(
         (e for e in entries if e.status != "done"),
         key=lambda e: (e.status == "started", e.updated_at),
-    )[:6]
+    )
+    watch = open_contracts[:4]
     rows = "".join(
         f'<div class="track" data-open="{_e(e.contract_id)}" data-title="{_e(e.label)}">'
         f'<div class="tk-name"><b>{_e(e.label)}</b>'
@@ -1695,12 +1707,21 @@ def _status_board(entries: list[ContractEntry]) -> str:
         for e in watch
     ) or '<div class="ev">진행 중인 계약이 없습니다.</div>'
 
+    more = (
+        f'<button class="mini" data-goto-view="contracts">'
+        f"나머지 {len(open_contracts) - len(watch)}건 보기</button>"
+        if len(open_contracts) > len(watch)
+        else ""
+    )
+
     return f"""<div class="statboard">
   <div class="statcards">{cards}</div>
   <div class="flowbar">{flow}</div>
 </div>
-<div class="card" style="margin-bottom:20px">
-  <h2>진행 중인 계약</h2>
+<div class="card compact" style="margin-bottom:20px">
+  <h2>진행 중인 계약<span class="badge">{len(open_contracts)}건</span>
+    <span class="h2-right">{more}</span>
+  </h2>
   <div class="tracks">{rows}</div>
 </div>"""
 
@@ -2008,7 +2029,8 @@ def _relation_map(entries: list[ContractEntry]) -> str:
     if len(graph.nodes) < 2:
         return ""
 
-    width, height = 780, 470
+    # 첫 화면 맨 위에 오므로, 아래 현황까지 한 화면에 들어오도록 납작하게 잡는다.
+    width, height = 820, 330
     points = relations.layout(graph, width, height)
     by_id = {e.contract_id: e for e in entries}
 
@@ -2067,7 +2089,7 @@ def _relation_map(entries: list[ContractEntry]) -> str:
     ranked = sorted(
         ((graph.degree(i), n) for i, n in enumerate(graph.nodes)),
         key=lambda pair: (-pair[0], pair[1].label),
-    )[:4]
+    )[:3]
     top = "".join(
         f'<div class="rel-row" data-open="{_e(node.contract_id)}" data-title="{_e(node.label)}">'
         f'<span class="dotmini" style="background:'
@@ -2082,8 +2104,8 @@ def _relation_map(entries: list[ContractEntry]) -> str:
     <span class="badge">조직 공유 {len(graph.org_links)}</span>
     <span class="badge">쟁점 공유 {len(graph.issue_links)}</span>
   </h2>
-  <p class="hint" style="margin:-6px 0 10px">같은 조직이 당사자로 얽혔거나 같은 쟁점이
-  함께 잡힌 계약을 잇습니다. 원 크기는 버전 수, 색은 분류입니다.</p>
+  <p class="hint" style="margin:-8px 0 8px">같은 조직이나 같은 쟁점으로 얽힌 계약을 잇습니다.
+  원 크기는 버전 수, 색은 분류입니다.</p>
   <div class="rel-body">
     <svg class="relmap" viewBox="0 0 {width} {height}" role="img"
       aria-label="계약 관계망">
