@@ -50,7 +50,10 @@ border-bottom:1px solid var(--line)}
 background:var(--chain);opacity:.5}
 .appbar-inner{max-width:1320px;margin:0 auto;padding:0 24px;display:flex;align-items:center;
 gap:22px;min-height:62px}
-.brand{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.brand{display:flex;align-items:center;gap:10px;flex:0 0 auto;border:0;background:none;
+padding:0;cursor:pointer;font:inherit;text-align:left;border-radius:10px}
+.brand:hover .name{filter:brightness(1.15)}
+.brand:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .brand .name{font-size:15px;font-weight:700;letter-spacing:.06em;line-height:1.15;
 background:var(--chain);-webkit-background-clip:text;background-clip:text;color:transparent}
 .brand .tag{font-size:10px;color:var(--muted);letter-spacing:.08em}
@@ -335,6 +338,27 @@ pointer-events:none;paint-order:stroke;stroke:#fff;stroke-width:3.5px;stroke-lin
 .relmap.focused .rel-edge.on{opacity:1;stroke-width:3.4}
 .relmap.focused .rel-node{opacity:.28}
 .relmap.focused .rel-node.on{opacity:1}
+/* A.Biz 회의록 — 실제 호출은 하지 않는다(화면 흐름 시연용) */
+.abiz{margin:14px 0 4px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.abiz-head{display:flex;align-items:center;gap:9px;padding:10px 14px;
+background:linear-gradient(90deg,rgba(67,56,202,.06),rgba(14,165,233,.05))}
+.abiz-head b{font-size:13.5px}
+.abiz-mark{width:22px;height:22px;border-radius:7px;background:var(--chain);color:#fff;
+display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800}
+.abiz-head .mini{margin-left:auto}
+.abiz-list{border-top:1px solid var(--line)}
+.abiz-item{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;cursor:pointer;
+border-bottom:1px solid var(--line);transition:background .14s}
+.abiz-item:last-child{border-bottom:0}
+.abiz-item:hover{background:var(--accent-soft)}
+.abiz-item .who{flex:1 1 auto;min-width:0}
+.abiz-item b{display:block;font-size:13.5px;font-weight:600}
+.abiz-item .meta{font-size:11.5px;color:var(--muted);margin-top:2px}
+.abiz-item .go{flex:0 0 auto;font-size:12px;font-weight:600;color:var(--accent)}
+
+/* 접히는 구획 */
+.sec h3 .toggle{margin-left:10px;vertical-align:middle}
+.sec-body[hidden]{display:none}
 .vrow{cursor:pointer}
 .vrow:hover{background:#f8fafc}
 .vrow[aria-expanded="true"]{background:var(--accent-soft)}
@@ -933,6 +957,79 @@ _APP_JS = r"""
     });
   }
 
+  // 접히는 구획 — 등록 원장처럼 늘 볼 필요는 없는 것들
+  document.querySelectorAll('[data-collapsible]').forEach(function(sec){
+    var button = sec.querySelector('[data-act="toggle-sec"]');
+    var body = sec.querySelector('.sec-body');
+    if (!button || !body) return;
+    button.addEventListener('click', function(){
+      var opening = body.hidden;
+      body.hidden = !opening;
+      button.textContent = opening ? '접기' : '펼치기';
+      button.setAttribute('aria-expanded', String(opening));
+    });
+  });
+
+  // A.Biz 회의록 — 목록을 받아 고르면 회의 내용이 채워지고 바로 분석까지 간다.
+  document.querySelectorAll('[data-meeting]').forEach(function(box){
+    var loadBtn = box.querySelector('[data-act="load-meetings"]');
+    var list = box.querySelector('[data-abiz-list]');
+    if (!loadBtn || !list) return;
+    var contractId = box.dataset.meeting;
+
+    loadBtn.addEventListener('click', function(){
+      if (!live) {
+        list.hidden = false;
+        list.innerHTML = '<div class="abiz-item"><div class="who">' +
+          '<b>서버 모드에서 동작합니다</b><div class="meta">' +
+          'contract-review serve 를 실행하십시오.</div></div></div>';
+        return;
+      }
+      loadBtn.textContent = '불러오는 중…';
+      var version = box.querySelector('[data-mt="version"]').value;
+      fetch('/api/meetings?contract=' + encodeURIComponent(contractId) +
+            '&version=' + encodeURIComponent(version))
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+          loadBtn.textContent = '다시 불러오기';
+          list.hidden = false;
+          if (!res.ok || !res.meetings.length) {
+            list.innerHTML = '<div class="abiz-item"><div class="who"><b>회의록이 없습니다</b>' +
+              '<div class="meta">' + (res.error || '연결된 회의가 없습니다.') +
+              '</div></div></div>';
+            return;
+          }
+          list.innerHTML = '';
+          res.meetings.forEach(function(meeting){
+            var row = document.createElement('div');
+            row.className = 'abiz-item';
+            row.innerHTML = '<div class="who"><b></b><div class="meta"></div></div>' +
+              '<span class="go">반영하기 →</span>';
+            row.querySelector('b').textContent = meeting.title;
+            row.querySelector('.meta').textContent =
+              meeting.at + ' · ' + meeting.attendees;
+            row.addEventListener('click', function(){
+              box.querySelector('[data-mt="minutes"]').value = meeting.minutes;
+              var label = box.querySelector('[data-mt="label"]');
+              if (!label.value) label.value = meeting.title + ' 반영';
+              list.hidden = true;
+              if (window.checky) {
+                window.checky.say('회의록을 가져왔어요. 조문을 찾아볼게요.', 'scanning', 12000);
+              }
+              box.querySelector('[data-act="analyze"]').click();
+            });
+            list.appendChild(row);
+          });
+        })
+        .catch(function(err){
+          loadBtn.textContent = '회의록 불러오기';
+          list.hidden = false;
+          list.innerHTML = '<div class="abiz-item"><div class="who"><b>불러오지 못했습니다</b>' +
+            '<div class="meta">' + String(err) + '</div></div></div>';
+        });
+    });
+  });
+
   // ── 업로드 / 내려받기 ─────────────────────────────
   var live = location.protocol === 'http:' || location.protocol === 'https:';
 
@@ -1140,13 +1237,13 @@ def render_workspace(entries: list[ContractEntry], integrity=None, blocks=None) 
 <div class="app">
 <header class="appbar">
   <div class="appbar-inner">
-    <div class="brand">
+    <button class="brand" data-goto-view="dashboard" title="현황관리로">
       {brand_markup(30)}
       <div>
         <div class="name">{BRAND}</div>
         <div class="tag">{TAGLINE}</div>
       </div>
-    </div>
+    </button>
     <nav class="tabs">
       <button data-goto="dashboard" aria-current="true">현황관리</button>
       <button data-goto="contracts">계약상세<span class="cnt">{len(entries)}</span></button>
@@ -1599,6 +1696,15 @@ def _meeting_panel(entry: ContractEntry) -> str:
         <input data-mt="label" placeholder="예: 2026-08-12 3차 협상 회의 반영">
       </label>
     </div>
+    <div class="abiz">
+      <div class="abiz-head">
+        <span class="abiz-mark">A.</span>
+        <b>A.Biz 회의록</b>
+        <span class="badge">데모 데이터</span>
+        <button class="mini" data-act="load-meetings">회의록 불러오기</button>
+      </div>
+      <div class="abiz-list" data-abiz-list hidden></div>
+    </div>
     <label style="display:block;font-size:12px;font-weight:600;color:var(--muted)">회의 내용
       <textarea data-mt="minutes" rows="5" placeholder="{placeholder}"></textarea>
     </label>
@@ -1878,8 +1984,11 @@ def _chain_panel(entry: ContractEntry) -> str:
         if entry.encrypted
         else '<span class="badge">평문 보관</span>'
     )
-    return f"""<div class="sec">
-  <h3>등록 원장 {seal}</h3>
+    return f"""<div class="sec" data-collapsible>
+  <h3>등록 원장 {seal}
+    <button class="mini toggle" data-act="toggle-sec" aria-expanded="false">펼치기</button>
+  </h3>
+  <div class="sec-body" hidden>
   <p class="hint">등록·편집이 일어날 때마다 블록이 하나 붙고, 각 블록은 앞 블록의 해시를
   품습니다. 중간 기록을 고치면 뒤 블록의 해시가 전부 어긋나 바로 드러납니다.</p>
   {_chain_strip(entry.chain)}
@@ -1887,6 +1996,7 @@ def _chain_panel(entry: ContractEntry) -> str:
   <thead><tr><th>블록</th><th>버전</th><th>기록 시각</th><th>문서 해시</th>
   <th>연결</th></tr></thead>
   <tbody>{rows}</tbody></table></div>
+  </div>
 </div>"""
 
 

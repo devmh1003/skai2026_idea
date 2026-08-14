@@ -12,6 +12,7 @@
     GET  /api/download         Word(.docx) 생성, PDF는 인쇄 화면으로
     GET  /api/export           계약대장·버전대장 CSV
     GET  /api/template         표준 계약서 양식 Word 내려받기
+    GET  /api/meetings         회의록 목록 (A.Biz 연동 자리 — 데모 데이터)
 
 외부 패키지도, 인터넷도 쓰지 않는다. 사내망 PC에서 그대로 띄울 수 있다.
 """
@@ -28,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .config import Settings
-from .meeting import build_proposals
+from .meeting import build_proposals, suggest_minutes
 from .models import RiskLevel
 from .report import (
     ContractEntry,
@@ -288,6 +289,10 @@ class Handler(BaseHTTPRequestHandler):
             self._template(query)
             return
 
+        if parsed.path == "/api/meetings":
+            self._meetings(query)
+            return
+
         self._send(b"not found", "text/plain; charset=utf-8", status=404)
 
     def _download(self, query: dict[str, list[str]]) -> None:
@@ -339,6 +344,48 @@ class Handler(BaseHTTPRequestHandler):
             text.encode("utf-8"),
             content_type,
             filename=f"{name}.{suffix}",
+        )
+
+    def _meetings(self, query: dict[str, list[str]]) -> None:
+        """계약에 연결된 회의록 목록.
+
+        화면상으로는 A.Biz에서 회의록을 받아 오는 자리다. 실제 A.Biz를 호출하지는
+        않고, 이 계약의 조문에서 협상 회의록을 만들어 돌려준다 — 그래야 반영
+        결과가 실제 조문에 걸린다. 응답에 demo 표시를 담아 화면에도 그대로 알린다.
+        """
+        from datetime import datetime
+
+        from .parsing import load_document
+
+        contract_id = query.get("contract", [""])[0]
+        version = query.get("version", ["latest"])[0] or "latest"
+        try:
+            with self.config.store.open_version(contract_id, version) as path:
+                document = load_document(path)
+        except (FileNotFoundError, ValueError, RuntimeError) as exc:
+            self._json({"ok": False, "error": str(exc)}, status=400)
+            return
+
+        title = self.config.store.title(contract_id)
+        today = datetime.now().strftime("%Y-%m-%d")
+        records = suggest_minutes(document.clauses, title, today)
+
+        self._json(
+            {
+                "ok": True,
+                "source": "A.Biz 회의록",
+                "demo": True,
+                "meetings": [
+                    {
+                        "id": record.id,
+                        "title": record.title,
+                        "at": record.at,
+                        "attendees": record.attendees,
+                        "minutes": record.minutes,
+                    }
+                    for record in records
+                ],
+            }
         )
 
     def _template(self, query: dict[str, list[str]]) -> None:

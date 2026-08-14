@@ -208,3 +208,85 @@ def _parse(raw: str) -> tuple[str, str]:
 
 def _norm(text: str) -> str:
     return "".join(text.split())
+
+
+# ---------------------------------------------------------------- 회의록 불러오기
+
+_AGENDA_TARGETS = (
+    ("지급", "대금 지급기일을 {n}일로 단축하기로 함"),
+    ("대금", "대금 지급기일을 {n}일로 단축하기로 함"),
+    ("손해배상", "손해배상 한도를 계약금액 100%로 하되 고의·중과실은 제외하기로 함"),
+    ("배상", "배상 한도를 계약금액 100%로 확정하기로 함"),
+    ("보증", "보증 한도와 보증 기간을 서면으로 특정하기로 함"),
+    ("연대보증", "연대보증 한도를 총 계약금액의 30%로 제한하기로 함"),
+    ("지체상금", "지체상금 요율을 0.1%로 낮추고 총액 상한을 10%로 두기로 함"),
+    ("검수", "검수 기간을 {n}일로 조정하기로 함"),
+    ("지식재산", "산출물 지식재산권은 공동 보유하되 각자 실시할 수 있도록 하기로 함"),
+    ("해지", "해지 전 30일 시정 최고 절차를 두기로 함"),
+    ("관할", "준거법과 관할을 대한민국 법·서울중앙지방법원으로 하기로 함"),
+    ("국외", "개인정보 국외 이전은 사전 서면 승인을 받도록 하기로 함"),
+    ("재위탁", "재위탁은 사전 서면 동의를 받도록 하기로 함"),
+    ("경업", "경업금지 범위를 서면으로 지정한 경쟁사로 한정하기로 함"),
+    ("가격", "원자재 변동 반영 산식을 별첨으로 확정하기로 함"),
+    ("자문", "긴급 자문 요청에 대한 회신 기한을 2영업일로 정하기로 함"),
+)
+
+_NUMBER_RE = re.compile(r"(\d{1,3})\s*일")
+
+
+@dataclass
+class MeetingRecord:
+    """협상 회의 한 건."""
+
+    id: str
+    title: str
+    at: str
+    attendees: str
+    minutes: str
+
+
+def suggest_minutes(clauses: list[Clause], contract_title: str, today: str) -> list[MeetingRecord]:
+    """계약 조문에서 협상 회의록을 만들어 낸다.
+
+    A.Biz 회의록 연동 화면이 무엇을 받게 되는지 보여주기 위한 것으로, 실제 A.Biz를
+    호출하지 않는다. 다만 아무 문장이나 지어내면 조문에 걸리지 않으므로, 이 계약에
+    실제로 있는 조문과 그 안의 숫자에서 항목을 만든다 — 그래야 반영 결과도 진짜다.
+    """
+    picked: list[tuple[Clause, str]] = []
+    used: set[str] = set()
+
+    for clause in clauses:
+        for keyword, template in _AGENDA_TARGETS:
+            if keyword not in clause.title or keyword in used:
+                continue
+            numbers = _NUMBER_RE.findall(clause.body)
+            shorter = max(int(numbers[0]) - 15, 10) if numbers else 30
+            picked.append((clause, template.format(n=shorter)))
+            used.add(keyword)
+            break
+        if len(picked) >= 6:
+            break
+
+    if not picked:
+        return []
+
+    def lines(items: list[tuple[Clause, str]]) -> str:
+        return "\n".join(f"- {clause.heading} {text}" for clause, text in items)
+
+    half = max(len(picked) // 2, 1)
+    return [
+        MeetingRecord(
+            id="mtg-1",
+            title=f"{contract_title} 조건 협의 (2차)",
+            at=f"{today} 10:00",
+            attendees="법무팀 김민형 · 구매팀 이수현 · 상대방 대리인",
+            minutes=lines(picked[:half]) + "\n- 다음 회의는 차주 화요일로 조율하기로 함",
+        ),
+        MeetingRecord(
+            id="mtg-2",
+            title=f"{contract_title} 쟁점 정리 회의",
+            at=f"{today} 15:30",
+            attendees="법무팀 김민형 · 사업부 박준영",
+            minutes=lines(picked[half:] or picked[:1]),
+        ),
+    ]
