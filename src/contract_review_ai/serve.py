@@ -13,6 +13,7 @@
     GET  /api/export           계약대장·버전대장 CSV
     GET  /api/template         표준 계약서 양식 Word 내려받기
     GET  /api/meetings         회의록 목록 (A.Biz 연동 자리 — 데모 데이터)
+    GET  /api/ledger           블록체인 상태 (화면이 주기적으로 물어본다)
 
 외부 패키지도, 인터넷도 쓰지 않는다. 사내망 PC에서 그대로 띄울 수 있다.
 """
@@ -293,6 +294,10 @@ class Handler(BaseHTTPRequestHandler):
             self._meetings(query)
             return
 
+        if parsed.path == "/api/ledger":
+            self._ledger_state()
+            return
+
         self._send(b"not found", "text/plain; charset=utf-8", status=404)
 
     def _download(self, query: dict[str, list[str]]) -> None:
@@ -344,6 +349,64 @@ class Handler(BaseHTTPRequestHandler):
             text.encode("utf-8"),
             content_type,
             filename=f"{name}.{suffix}",
+        )
+
+    def _ledger_state(self) -> None:
+        """블록체인 현재 상태. 화면이 주기적으로 물어 실시간으로 갱신한다.
+
+        수치는 전부 실제로 잰 값이다 — 검증 소요 시간은 이번 요청에서 체인을 처음부터
+        끝까지 다시 훑는 데 걸린 시간이고, 크기는 원장 파일의 실제 바이트다.
+        """
+        import time
+
+        ledger = self.config.store.ledger
+        started = time.perf_counter()
+        verification = ledger.verify()
+        elapsed_ms = (time.perf_counter() - started) * 1000
+
+        blocks = ledger.blocks()
+        size = ledger.path.stat().st_size if ledger.path.is_file() else 0
+
+        # 평균 블록 간격 — 기록이 얼마나 자주 쌓이는지
+        stamps = [b.at for b in blocks if b.at]
+        interval = ""
+        if len(stamps) >= 2:
+            from datetime import datetime
+
+            try:
+                first = datetime.strptime(stamps[0], "%Y-%m-%d %H:%M:%S")
+                last = datetime.strptime(stamps[-1], "%Y-%m-%d %H:%M:%S")
+                seconds = (last - first).total_seconds() / max(len(stamps) - 1, 1)
+                interval = f"{seconds:.0f}초" if seconds < 90 else f"{seconds / 60:.0f}분"
+            except ValueError:
+                interval = ""
+
+        self._json(
+            {
+                "ok": True,
+                "verified": verification.ok,
+                "length": verification.length,
+                "tip": verification.tip,
+                "broken_at": verification.broken_at,
+                "verify_ms": round(elapsed_ms, 1),
+                "bytes": size,
+                "interval": interval,
+                "encrypted": self.config.store.encrypted,
+                "at": blocks[-1].at if blocks else "",
+                "recent": [
+                    {
+                        "index": b.index,
+                        "at": b.at,
+                        "kind": b.kind,
+                        "contract_id": b.contract_id,
+                        "version": b.version,
+                        "label": b.label,
+                        "hash": b.hash,
+                        "prev": b.prev,
+                    }
+                    for b in blocks[-8:]
+                ],
+            }
         )
 
     def _meetings(self, query: dict[str, list[str]]) -> None:

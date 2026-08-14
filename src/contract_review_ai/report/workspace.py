@@ -359,6 +359,40 @@ border-bottom:1px solid var(--line);transition:background .14s}
 /* 접히는 구획 */
 .sec h3 .toggle{margin-left:10px;vertical-align:middle}
 .sec-body[hidden]{display:none}
+/* 블록체인 실시간 상태판 */
+.livedot{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--ok);
+background:var(--ins);border-radius:999px;padding:4px 12px;font-weight:600}
+.livedot i{width:7px;height:7px;border-radius:50%;background:var(--ok);
+animation:pulse 1.6s ease-in-out infinite}
+.livedot[data-live="off"]{color:var(--muted);background:var(--raise,#f2f4f7)}
+.livedot[data-live="off"] i{background:var(--muted);animation:none}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(8,116,67,.45)}
+50%{opacity:.55;box-shadow:0 0 0 6px rgba(8,116,67,0)}}
+
+.chainstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;
+margin-bottom:14px}
+.cs{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+box-shadow:var(--shadow);position:relative;overflow:hidden}
+.cs::before{content:"";position:absolute;inset:0 0 auto;height:2px;background:var(--chain)}
+.cs .k{font-size:11.5px;color:var(--muted)}
+.cs .n{font-size:22px;font-weight:600;line-height:1.25;margin-top:3px;
+font-variant-numeric:tabular-nums}
+.cs .n.tiphash{font-size:14px}
+.cs .d{font-size:11.5px;color:var(--muted);margin-top:2px}
+.cs .n.bump{animation:bump .6s ease}
+@keyframes bump{0%{transform:scale(1)}35%{transform:scale(1.14);color:var(--accent)}
+100%{transform:scale(1)}}
+
+.hashstream{overflow:hidden;border:1px solid var(--line);border-radius:10px;
+background:var(--surface);padding:9px 0;margin-bottom:14px;
+-webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);
+mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
+.stream-inner{display:flex;gap:26px;width:max-content;animation:slide 42s linear infinite}
+.hashstream:hover .stream-inner{animation-play-state:paused}
+@keyframes slide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.tick{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--muted);
+white-space:nowrap}
+.tick i{font-style:normal;font-weight:700;color:var(--accent);margin-right:7px}
 .vrow{cursor:pointer}
 .vrow:hover{background:#f8fafc}
 .vrow[aria-expanded="true"]{background:var(--accent-soft)}
@@ -520,7 +554,7 @@ _APP_JS = r"""
   function goCreate(){ show('create'); crumbs([{label:'계약생성'}]); tell('create'); }
   function goCustomers(){ show('customers'); crumbs([{label:'고객관리'}]); tell('customers'); }
   function goSearch(){ show('search'); crumbs([{label:'조항검색'}]); tell('search'); }
-  function goLedger(){ show('ledger'); crumbs([{label:'원장'}]); tell('ledger'); }
+  function goLedger(){ show('ledger'); crumbs([{label:'블록체인'}]); tell('ledger'); }
 
   function goDetail(id, title){
     document.querySelectorAll('[data-detail]').forEach(function(el){
@@ -1030,6 +1064,79 @@ _APP_JS = r"""
     });
   });
 
+  // 블록체인 상태 — 화면이 주기적으로 물어 갱신한다. 업로드·편집으로 블록이 늘면
+  // 새로고침 없이 숫자가 따라 오른다.
+  (function(){
+    // live는 아래 블록에서 선언된다 — 여기서 다시 확인한다(호이스팅 때문에 아직 값이 없다).
+    var online = location.protocol === 'http:' || location.protocol === 'https:';
+    var stats = document.querySelector('.chainstats');
+    if (!stats || !online) {
+      var dot = document.querySelector('[data-live]');
+      if (dot) { dot.dataset.live = 'off'; dot.lastChild.textContent = '정지'; }
+      return;
+    }
+    var fields = {};
+    stats.parentNode.querySelectorAll('[data-ls]').forEach(function(el){
+      fields[el.dataset.ls] = el;
+    });
+    var known = null;
+
+    function human(bytes){
+      if (bytes > 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+      if (bytes > 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return bytes + ' B';
+    }
+    function set(name, value, bump){
+      var el = fields[name];
+      if (!el || el.textContent === value) return;
+      el.textContent = value;
+      if (bump) { el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
+    }
+
+    function poll(){
+      fetch('/api/ledger').then(function(r){ return r.json(); }).then(function(s){
+        if (!s.ok) return;
+        var grew = known !== null && s.length > known;
+        set('length', String(s.length), grew);
+        set('tip', s.tip.slice(0, 16) + '…', grew);
+        set('verified', s.verified ? '확인' : '블록 ' + s.broken_at + ' 불일치');
+        set('verify_ms', s.verify_ms + 'ms');
+        set('bytes', human(s.bytes));
+        set('at', s.at ? s.at.slice(11, 16) : '—');
+        set('interval', s.interval ? '평균 간격 ' + s.interval : '기록 1건');
+        if (fields.verified) {
+          fields.verified.style.color = s.verified ? 'var(--ok)' : 'var(--high)';
+        }
+        if (grew && window.checky) {
+          window.checky.say('블록 #' + (s.length - 1) + '이 체인에 붙었어요.', 'ok', 8000);
+        }
+        known = s.length;
+      }).catch(function(){});
+    }
+
+    poll();
+    setInterval(poll, 6000);
+
+    var verifyBtn = document.querySelector('[data-act="verify-now"]');
+    if (verifyBtn) {
+      verifyBtn.addEventListener('click', function(){
+        verifyBtn.textContent = '검증 중…';
+        if (window.checky) window.checky.say('체인을 처음부터 훑고 있어요…', 'scanning', 6000);
+        fetch('/api/ledger').then(function(r){ return r.json(); }).then(function(s){
+          verifyBtn.textContent = '지금 검증';
+          poll();
+          if (window.checky) {
+            window.checky.say(
+              s.verified
+                ? '블록 ' + s.length + '개, 이상 없어요. (' + s.verify_ms + 'ms)'
+                : '블록 ' + s.broken_at + '에서 어긋났어요.',
+              s.verified ? 'ok' : 'alert', 9000);
+          }
+        });
+      });
+    }
+  })();
+
   // ── 업로드 / 내려받기 ─────────────────────────────
   var live = location.protocol === 'http:' || location.protocol === 'https:';
 
@@ -1250,7 +1357,7 @@ def render_workspace(entries: list[ContractEntry], integrity=None, blocks=None) 
       <button data-goto="create">계약생성</button>
       <button data-goto="customers">고객관리<span class="cnt">{_party_total(entries)}</span></button>
       <button data-goto="search">조항검색</button>
-      <button data-goto="ledger">원장<span class="cnt">{len(blocks)}</span></button>
+      <button data-goto="ledger">블록체인<span class="cnt">{len(blocks)}</span></button>
     </nav>
     <div class="appbar-right">
       {_integrity_pill(integrity, entries)}
@@ -1888,7 +1995,7 @@ def _ledger_card(blocks, integrity, entries: list[ContractEntry]) -> str:
     state_class = "ok" if integrity.ok else "bad"
     state_text = "무결성 확인" if integrity.ok else f"블록 {integrity.broken_at} 불일치"
     return f"""<div class="card ledger-card {state_class}" style="margin-bottom:20px">
-  <h2>문서 원장
+  <h2>블록체인
     <span class="badge {"ok" if integrity.ok else "high"}">{_e(state_text)}</span>
     {f'<span class="badge">암호화 보관 {sealed}건</span>' if sealed else ""}
   </h2>
@@ -1911,10 +2018,15 @@ def _ledger_card(blocks, integrity, entries: list[ContractEntry]) -> str:
 
 
 def _ledger_view(blocks, integrity, entries: list[ContractEntry]) -> str:
-    """원장 전체 화면."""
+    """블록체인 화면.
+
+    숫자는 화면이 주기적으로 `/api/ledger`에 물어 갱신한다. 검증 시간도 그때마다
+    체인을 처음부터 다시 훑어 실제로 잰 값이다 — 표시만 실시간인 것이 아니라
+    정말로 매번 다시 확인한다.
+    """
     if not blocks:
-        return """<div class="vhead"><div><h2>원장</h2>
-        <p>아직 기록된 블록이 없습니다.</p></div></div>"""
+        return """<div class="vhead"><div><h2>블록체인</h2>
+        <p>아직 기록된 블록이 없습니다. 계약을 등록하면 첫 블록이 생성됩니다.</p></div></div>"""
 
     titles = {e.contract_id: e.label for e in entries}
     rows = "".join(
@@ -1931,22 +2043,46 @@ def _ledger_view(blocks, integrity, entries: list[ContractEntry]) -> str:
         for block in reversed(blocks)
     )
 
-    state = "무결성 확인" if integrity and integrity.ok else "불일치"
+    ticker = "".join(
+        f'<span class="tick"><i>#{block.index}</i>{_e(block.hash[:16])}</span>'
+        for block in blocks[-10:]
+    )
+    sealed = any(e.encrypted for e in entries)
+
     return f"""<div class="vhead">
-  <div><h2>원장</h2>
+  <div><h2>블록체인</h2>
     <p>등록·편집이 일어날 때마다 블록이 쌓입니다. 각 블록은 앞 블록의 해시를 품고 있어,
     중간 기록을 고치면 뒤가 전부 어긋납니다.</p>
   </div>
   <div class="right">
-    <span class="badge {"ok" if integrity and integrity.ok else "high"}">{_e(state)}</span>
-    <span class="badge">블록 {len(blocks)}</span>
+    <span class="livedot" data-live><i></i>실시간 감시</span>
+    <button class="mini" data-act="verify-now">지금 검증</button>
   </div>
 </div>
-{_chain_strip(blocks, limit=14)}
+
+<div class="chainstats">
+  <div class="cs"><div class="k">블록 높이</div>
+    <div class="n" data-ls="length">{len(blocks)}</div>
+    <div class="d" data-ls="interval">평균 간격 측정 중</div></div>
+  <div class="cs"><div class="k">체인 팁</div>
+    <div class="n mono tiphash" data-ls="tip">{_e(blocks[-1].hash[:16])}…</div>
+    <div class="d">가장 최근 블록의 해시</div></div>
+  <div class="cs"><div class="k">무결성</div>
+    <div class="n" data-ls="verified">{"확인" if integrity and integrity.ok else "불일치"}</div>
+    <div class="d"><span data-ls="verify_ms">—</span> 만에 전수 검증</div></div>
+  <div class="cs"><div class="k">보관</div>
+    <div class="n">{"암호화" if sealed else "평문"}</div>
+    <div class="d"><span data-ls="bytes">—</span> · 마지막 <span data-ls="at">—</span></div></div>
+</div>
+
+<div class="hashstream"><div class="stream-inner">{ticker}{ticker}</div></div>
+
+<div class="chain" data-chain-strip>{_chain_strip(blocks, limit=14)[len('<div class="chain">'):-6]}</div>
+
 <div class="tbl" style="margin-top:14px"><table>
 <thead><tr><th>블록</th><th>기록 시각</th><th>종류</th><th>대상</th>
 <th>문서 해시</th><th>연결 (앞 → 이 블록)</th></tr></thead>
-<tbody>{rows}</tbody></table></div>"""
+<tbody data-ls-rows>{rows}</tbody></table></div>"""
 
 
 def _vault_badge(entries: list[ContractEntry], integrity) -> str:
@@ -1985,7 +2121,7 @@ def _chain_panel(entry: ContractEntry) -> str:
         else '<span class="badge">평문 보관</span>'
     )
     return f"""<div class="sec" data-collapsible>
-  <h3>등록 원장 {seal}
+  <h3>블록체인 기록 {seal}
     <button class="mini toggle" data-act="toggle-sec" aria-expanded="false">펼치기</button>
   </h3>
   <div class="sec-body" hidden>
